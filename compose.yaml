@@ -1,0 +1,58 @@
+services:
+  # Production-like: the runtime image serving API + built client together.
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "8080:8080"
+
+  # Development profile (`docker compose --profile dev up`): hot-reloading
+  # server and client in separate containers.
+  server:
+    profiles: [dev]
+    build:
+      context: .
+      target: dev
+    command: dotnet watch --project Api --non-interactive
+    working_dir: /work/server
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    volumes:
+      - ./server:/work/server
+    ports:
+      - "8080:8080"
+
+  client:
+    profiles: [dev]
+    build:
+      context: .
+      target: dev
+    command: sh -c "npm install && npm run dev"
+    working_dir: /work/client
+    environment:
+      VITE_API_PROXY: http://server:8080
+    volumes:
+      - ./client:/work/client
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+  # Need a database? Uncomment and add a connection string to the server.
+  # db:
+  #   image: postgres:18-alpine
+  #   environment:
+  #     POSTGRES_PASSWORD: dev-only-password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+
+# volumes:
+#   pgdata:

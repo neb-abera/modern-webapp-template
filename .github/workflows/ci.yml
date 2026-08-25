@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# Least-privilege token: read-only for all CI jobs.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # CI runs exactly what `make verify` runs locally: the same containers,
+      # the same checks, the same tally.
+      - name: run the verification suite
+        run: ./scripts/verify.sh
