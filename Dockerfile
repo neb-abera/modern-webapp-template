@@ -3,7 +3,7 @@
 #
 # Client build
 #
-FROM node:24-alpine AS client-build
+FROM node:26-alpine AS client-build
 WORKDIR /build/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
