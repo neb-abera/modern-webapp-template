@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+dist/
+out/
+
+# Dependencies
+node_modules/
+
+# Test artifacts
+TestResults/
+playwright-report/
+test-results/
+coverage/
+
+# Environment and editor
+.env
+.env.local
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+.DS_Store
