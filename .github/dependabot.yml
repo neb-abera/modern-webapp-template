@@ -1,0 +1,30 @@
+# Keeps the SHA-pinned GitHub Actions, base images and package ecosystems
+# current. Dependabot PRs update the pinned SHA and the version comment
+# together, so supply-chain pinning and staying on the latest versions are
+# compatible.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nuget
+    directory: /server
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /client
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
