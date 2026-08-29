@@ -68,6 +68,15 @@ var staticFiles = new StaticFileOptions
 app.UseDefaultFiles();
 app.UseStaticFiles(staticFiles);
 
+// Explicit, and deliberately AFTER the static file middleware. Left implicit,
+// WebApplication puts routing at the front of the pipeline, where the SPA
+// fallback endpoint matches every extensionless request — and the static file
+// middleware stands down once an endpoint has matched, so UseDefaultFiles is
+// dead code and every page is served by the fallback. Invisible while both
+// serve the same index.html; a production incident on aberaTech the moment
+// they differed (prerendered pages all served the empty shell).
+app.UseRouting();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
