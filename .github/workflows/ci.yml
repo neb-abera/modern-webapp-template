@@ -1,10 +1,17 @@
 name: CI
 
 on:
+  # Every pull request, whatever it targets. Filtering on the default branch
+  # means a PR stacked on another feature branch gets no checks at all — the
+  # change most likely to go wrong is the one nothing verifies.
+  pull_request:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
+
+# A newer push to the same branch makes the running check obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Least-privilege token: read-only for all CI jobs.
 permissions:
@@ -18,7 +25,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
       # CI runs exactly what `make verify` runs locally: the same containers,
-      # the same checks, the same tally.
+      # the same checks, the same tally. The GHA layer cache only changes how
+      # fast the production image builds, not what is built.
       - name: run the verification suite
+        env:
+          VERIFY_DOCKER_BUILD_ARGS: --load --cache-from type=gha --cache-to type=gha,mode=max
         run: ./scripts/verify.sh
+
+      # The four delivery/UI bugs that reach production are the ones nothing
+      # opened in a browser; when the browser suite fails, the trace is how
+      # you see what it saw.
+      - name: playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces
+          path: e2e-test-results/
+          retention-days: 7
+          if-no-files-found: ignore

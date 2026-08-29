@@ -1,0 +1,102 @@
+# Deploy to Azure Container Apps. Inert until renamed to deploy.yml; the
+# one-time Azure setup it depends on is documented in docs/deploying.md.
+#
+# Repository variables: ACR_LOGIN_SERVER, CONTAINER_APP_NAME, AZURE_RESOURCE_GROUP
+# Repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+name: deploy
+
+# Only from the default branch, and only once CI has passed on it. Nothing
+# reaches the internet that has not been verified.
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main, master]
+    types: [completed]
+  # For redeploying the current main without a new commit.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  # Required for the OIDC token azure/login exchanges for credentials; no
+  # client secret is stored anywhere.
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    # workflow_run fires whether or not the checks passed, so a failed run has
+    # to be filtered out here rather than assumed away.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      REGISTRY: ${{ vars.ACR_LOGIN_SERVER }}
+      CONTAINER_APP: ${{ vars.CONTAINER_APP_NAME }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Be explicit about the commit that passed the checks.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Azure login
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Built on the runner and pushed, rather than with `az acr build`, so
+      # the deploy identity needs only AcrPush + Reader on the registry.
+      # Client-side VITE_* configuration must be passed here as build args:
+      # the bundle resolves import.meta.env at build time (docs/deploying.md).
+      - name: Build and push the image
+        env:
+          IMAGE: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          az acr login --name "${REGISTRY%%.*}"
+          docker build \
+            --tag "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --tag "$REGISTRY/$IMAGE:latest" .
+          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE:latest"
+
+      # Deploy the immutable tag: a revision names exactly what it runs, and
+      # rollback is redeploying a previous SHA.
+      - name: Deploy the revision
+        env:
+          IMAGE: ${{ github.event.repository.name }}
+        run: |
+          az containerapp update \
+            --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$REGISTRY/$IMAGE:${{ github.sha }}"
+
+      # `az containerapp update` returns once the revision is created, not
+      # once it is serving. Without this a broken deploy looks green.
+      - name: Wait for the new revision to be healthy
+        run: |
+          set -euo pipefail
+          fqdn=$(az containerapp show --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.configuration.ingress.fqdn' -o tsv)
+          echo "checking https://$fqdn/healthz"
+          for attempt in $(seq 1 30); do
+            if curl -sf --max-time 10 "https://$fqdn/healthz" > /dev/null; then
+              echo "healthy after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "revision did not become healthy within five minutes"
+          az containerapp logs show --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" --tail 50 || true
+          exit 1

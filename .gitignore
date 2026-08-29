@@ -22,3 +22,6 @@ coverage/
 .idea/
 *.user
 .DS_Store
+
+# Playwright traces copied out by scripts/verify.sh on e2e failure
+e2e-test-results/
