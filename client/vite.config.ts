@@ -2,7 +2,16 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-export default defineConfig({
+// A function because the build runs twice: once for the browser bundle and
+// once (--ssr) for the build-time renderer, whose single output file must
+// land at a fixed name for tools/prerender.mjs to import.
+export default defineConfig(({ isSsrBuild }) => ({
+  build: isSsrBuild
+    ? {
+        outDir: "dist-server",
+        rollupOptions: { output: { entryFileNames: "[name].js" } },
+      }
+    : {},
   plugins: [react()],
   server: {
     host: true,
@@ -18,4 +27,4 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     globals: false,
   },
-});
+}));

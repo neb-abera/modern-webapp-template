@@ -49,3 +49,23 @@ test("hashed assets are cacheable, the document is not", async ({ page }) => {
   const docCache = (await doc?.headerValue("cache-control")) ?? "";
   expect(docCache).toContain("no-cache");
 });
+
+test("the home page is readable before any JavaScript runs", async ({ browser }) => {
+  // Prerendering's whole promise: first paint is the page, not a blank shell
+  // waiting on the bundle. A browser with JS disabled is the strictest proof.
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Modern Web App" })).toBeVisible();
+
+  await context.close();
+});
+
+test("a route that is not prerendered still boots the app", async ({ page }) => {
+  // Unknown routes fall back to the empty spa.html shell and render
+  // client-side; the fallback must not carry the home page's baked markup.
+  await page.goto("/definitely-not-prerendered");
+
+  await expect(page.getByRole("heading", { name: "Modern Web App" })).toBeVisible();
+});
