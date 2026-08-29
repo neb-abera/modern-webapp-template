@@ -5,7 +5,9 @@
 #
 # Minor and patch updates are grouped into one PR per ecosystem so the
 # default open-PR limit (5 per entry) never queues updates behind unmerged
-# noise. Major updates still arrive as individual PRs.
+# noise. Majors arrive as individual PRs; the dependabot-automerge workflow
+# arms every PR, so a major merges itself when CI is green and stays open —
+# red — when it genuinely conflicts. Open red PRs are the human queue.
 #
 # Not covered by Dependabot: <TargetFramework> in server/Directory.Build.props
 # and the cross-major jumps it gates — the dotnet-major-upgrade workflow

@@ -1,9 +1,11 @@
 name: Dependabot auto-merge
-# Arms GitHub's auto-merge on Dependabot's grouped patch/minor PRs, so they
-# merge themselves once every required check is green. Majors are left alone —
-# a major is where the release notes actually need reading. Together with the
-# grouped updates in dependabot.yml, the steady state is one self-merging PR
-# per ecosystem per week and human attention only where it earns its keep.
+# Arms GitHub's auto-merge on every Dependabot PR — majors included — so
+# updates merge themselves once every required check is green. The verify
+# suite and CI gates are the reviewer: an update that genuinely conflicts
+# (a peer-dependency wall, an API break the tests catch) fails those checks
+# and simply stays open. An open red Dependabot PR is the signal that a
+# human decision is needed, and the only kind of update that should consume
+# human attention.
 #
 # Needs two things an adopting repository must set up once:
 #  - the "Allow auto-merge" setting enabled on the repository, and
@@ -24,14 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
-      - name: Fetch dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Arm auto-merge for patch and minor updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - name: Arm auto-merge
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
