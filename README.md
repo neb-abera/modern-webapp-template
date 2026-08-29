@@ -44,7 +44,13 @@ Docker, gated by a test-driven verification suite, and secured by default.
 * **…and it stays current by machinery, not memory** — Dependabot watches
   every ecosystem (both npm manifests, NuGet, Docker, compose, Actions),
   with patch/minor bumps grouped into one PR per ecosystem and the pinned
-  digests updated alongside the tags. The one jump Dependabot never makes —
+  digests updated alongside the tags. Those grouped PRs merge themselves
+  when CI is green: the `dependabot-automerge` workflow arms GitHub
+  auto-merge on everything non-major, once the repository enables its
+  Allow auto-merge setting and holds a `DEPENDABOT_AUTOMERGE_TOKEN` secret
+  (a fine-grained PAT with contents and pull-requests write — a PAT so the
+  merge still triggers CI and deploys, which `GITHUB_TOKEN` merges do not).
+  Majors wait for a human. The one jump Dependabot never makes —
   a new .NET major — is handled by the monthly `dotnet-major-upgrade`
   workflow, which opens a PR moving the TargetFramework, base images and
   framework packages together (close and reopen that PR to trigger CI on
