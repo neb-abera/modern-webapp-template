@@ -1,4 +1,5 @@
 [![CI](https://github.com/neb-abera/modern-webapp-template/workflows/CI/badge.svg)](https://github.com/neb-abera/modern-webapp-template/actions)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/neb-abera/modern-webapp-template/badge)](https://scorecard.dev/viewer/?uri=github.com/neb-abera/modern-webapp-template)
 
 # Modern Web App Template
 
