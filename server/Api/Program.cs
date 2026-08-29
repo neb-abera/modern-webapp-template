@@ -37,7 +37,7 @@ app.UseStatusCodePages();
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
-    headers.ContentSecurityPolicy = "default-src 'self'; frame-ancestors 'none'";
+    headers.ContentSecurityPolicy = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
     headers.XContentTypeOptions = "nosniff";
     headers["Referrer-Policy"] = "no-referrer";
     headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()";
@@ -45,6 +45,7 @@ app.Use(async (context, next) =>
     // same-origin (Spectre-class cross-origin leak mitigations).
     headers["Cross-Origin-Opener-Policy"] = "same-origin";
     headers["Cross-Origin-Resource-Policy"] = "same-origin";
+    headers["Cross-Origin-Embedder-Policy"] = "require-corp";
     headers.XFrameOptions = "DENY"; // legacy agents; CSP frame-ancestors covers the rest
     await next().ConfigureAwait(false);
 });
