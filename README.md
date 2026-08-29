@@ -100,15 +100,20 @@ runs in a container.
 
 ## After generating from this template
 
-1. Rename: `Modern Web App` in [`client/index.html`](client/index.html) and
-   [`client/src/App.tsx`](client/src/App.tsx) (plus its tests), the badge and
-   repository URLs in this README, and this description.
-2. Enable the repo-level GitHub settings templates cannot carry over: secret
-   scanning + push protection, private vulnerability reporting, Dependabot
-   alerts + security updates, and branch protection requiring the `verify`
-   and CodeQL checks.
-3. Everything else adapts automatically: release/image names follow your
-   repository, Docker names follow your directory.
+One command finishes the setup — it renames the app after your repository and
+enables the repo-level GitHub settings templates cannot carry over (secret
+scanning, push protection, private vulnerability reporting, Dependabot
+alerts + security updates, and branch protection requiring the `verify` and
+CodeQL checks):
+
+```bash
+./scripts/setup.sh
+```
+
+It needs the [GitHub CLI](https://cli.github.com) authenticated as a repo
+admin, and it is safe to re-run. Everything else adapts automatically:
+release/image names follow your repository, Docker names follow your
+directory.
 
 ## License
 
