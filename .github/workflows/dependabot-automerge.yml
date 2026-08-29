@@ -1,0 +1,43 @@
+name: Dependabot auto-merge
+# Arms GitHub's auto-merge on Dependabot's grouped patch/minor PRs, so they
+# merge themselves once every required check is green. Majors are left alone —
+# a major is where the release notes actually need reading. Together with the
+# grouped updates in dependabot.yml, the steady state is one self-merging PR
+# per ecosystem per week and human attention only where it earns its keep.
+#
+# Needs two things an adopting repository must set up once:
+#  - the "Allow auto-merge" setting enabled on the repository, and
+#  - a DEPENDABOT_AUTOMERGE_TOKEN secret: a fine-grained PAT with
+#    contents:write and pull-requests:write on the repository.
+# Until both exist, the workflow warns and does nothing.
+#
+# A PAT rather than GITHUB_TOKEN, on purpose: a merge performed via
+# GITHUB_TOKEN does not trigger workflows, so pushes to the default branch
+# would run no CI, release or deploy workflow — the repository would ship a
+# dependency it never rebuilt.
+on: pull_request
+
+permissions: {}
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Arm auto-merge for patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::DEPENDABOT_AUTOMERGE_TOKEN not set; not arming auto-merge. Merge this PR by hand, or add the secret (fine-grained PAT, contents:write + pull-requests:write on this repo) and enable the repository's Allow auto-merge setting."
+            exit 0
+          fi
+          gh pr merge --auto --merge "$PR_URL"
