@@ -1,3 +1,4 @@
+using Api;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Net.Http.Headers;
@@ -65,6 +66,26 @@ var staticFiles = new StaticFileOptions
                 ? "public, max-age=31536000, immutable"
                 : CacheControlHeaderValue.NoCacheString,
 };
+// Prerendered pages: /about is on disk as /about/index.html, so an
+// extensionless GET or HEAD whose prerendered file exists is rewritten to it
+// before the static file middleware looks. Anything else falls through.
+var webRoot = app.Environment.WebRootFileProvider;
+app.Use((context, next) =>
+{
+    if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
+    {
+        var rewritten = PrerenderedPages.RewriteFor(
+            context.Request.Path.Value ?? "/",
+            candidate => webRoot.GetFileInfo(candidate).Exists);
+        if (rewritten is not null)
+        {
+            context.Request.Path = rewritten;
+        }
+    }
+
+    return next(context);
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles(staticFiles);
 
@@ -86,7 +107,11 @@ app.MapHealthChecks("/healthz");
 
 app.MapGet("/api/hello", () => Results.Ok(new Greeting("Hello from the API")));
 
-app.MapFallbackToFile("index.html", staticFiles);
+// spa.html, not index.html: index.html carries the home page's prerendered
+// markup, and a client-rendered route served over it would flash the wrong
+// page and then hydrate against DOM that contradicts it. spa.html is the
+// same shell with the root div left empty.
+app.MapFallbackToFile("spa.html", staticFiles);
 
 app.Run();
 
