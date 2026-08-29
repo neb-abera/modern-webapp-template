@@ -37,8 +37,12 @@ test-server: ## run the server unit tests
 	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-nuget:/root/.nuget mcr.microsoft.com/dotnet/sdk:10.0 \
 		bash -c 'cp -r /src /w && cd /w/server && dotnet test Api.Tests'
 
+# Derived from the Dockerfile like verify.sh does, so the Makefile cannot
+# drift to a different node major than the image the code actually ships on.
+NODE_IMAGE = $(shell sed -n 's/^FROM \(node:[^@ ]*\).*/\1/p' Dockerfile | head -1)
+
 test-client: ## run the client typecheck, lint and unit tests
-	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-npm:/npm-cache -e npm_config_cache=/npm-cache node:24-alpine \
+	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-npm:/npm-cache -e npm_config_cache=/npm-cache $(NODE_IMAGE) \
 		sh -c 'cp -r /src/client /w && cd /w && npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npm run test'
 
 e2e: ## run only the end-to-end suite (part of `make verify`)
