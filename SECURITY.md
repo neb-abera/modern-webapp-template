@@ -28,7 +28,8 @@ Projects generated from this template ship with:
   requires write),
 * an end-to-end suite that verifies the security headers reach real browsers.
 
-Repo-level settings to enable on generated repositories (GitHub does not
-inherit them from templates): secret scanning + push protection, private
-vulnerability reporting, Dependabot alerts and security updates, and branch
-protection requiring the `verify` and CodeQL checks.
+GitHub does not inherit repo-level settings from templates (secret scanning +
+push protection, private vulnerability reporting, Dependabot alerts and
+security updates, branch protection requiring the `verify` and CodeQL
+checks). Running [`./scripts/setup.sh`](scripts/setup.sh) once on a generated
+repository enables all of them.
