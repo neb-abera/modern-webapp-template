@@ -167,5 +167,8 @@ and the reasoning, host-agnostic.
 
 ## License
 
-This project is licensed under the [Unlicense](https://unlicense.org/) - see
-the [LICENSE](LICENSE) file for details.
+This project is licensed under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) — see the
+[LICENSE](LICENSE) file. Use it freely, keep the [NOTICE](NOTICE) file's
+attribution with any copies, and know that contributors grant you the patent
+claims their code necessarily practices.
