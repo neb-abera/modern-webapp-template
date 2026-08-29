@@ -34,12 +34,23 @@ Docker, gated by a test-driven verification suite, and secured by default.
 * **Security by default** — CSP and companion response headers with tests
   pinning them, IP-partitioned rate limiting, non-root containers, CodeQL
   (C#, TypeScript, workflows) on every PR, GitHub Actions pinned to commit
-  SHAs, least-privilege workflow tokens, Dependabot across all ecosystems,
-  and a SECURITY.md (see it for the full inventory),
+  SHAs and base images to digests, least-privilege workflow tokens, and a
+  SECURITY.md (see it for the full inventory),
 
 * **Cutting-edge, not bleeding-edge toolchain** — .NET 10 LTS, React 19,
   Vite 8, Vitest 4, TypeScript 7, Biome 2 (one fast linter+formatter instead
   of ESLint+Prettier), Playwright, Node 24 LTS,
+
+* **…and it stays current by machinery, not memory** — Dependabot watches
+  every ecosystem (both npm manifests, NuGet, Docker, compose, Actions),
+  with patch/minor bumps grouped into one PR per ecosystem and the pinned
+  digests updated alongside the tags. The one jump Dependabot never makes —
+  a new .NET major — is handled by the monthly `dotnet-major-upgrade`
+  workflow, which opens a PR moving the TargetFramework, base images and
+  framework packages together (close and reopen that PR to trigger CI on
+  it; workflow-opened PRs don't start checks on their own). Toolchain
+  versions are never repeated in scripts: `verify.sh` derives its images
+  from the Dockerfile and `e2e/package.json`, so nothing can drift,
 
 * **Releases from tags** — pushing `v*` re-verifies, publishes the container
   image to GHCR and creates a GitHub Release. Tag confirmed-working

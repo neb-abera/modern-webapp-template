@@ -22,8 +22,11 @@ Projects generated from this template ship with:
   containing only the published app,
 * CodeQL static analysis of the C#, TypeScript and workflow files on every
   pull request and weekly,
-* GitHub Actions pinned to full commit SHAs, kept current by Dependabot
-  (actions, docker, nuget and npm ecosystems),
+* GitHub Actions pinned to full commit SHAs and container base images to
+  digests, both kept current by Dependabot (actions, docker, docker-compose,
+  nuget and both npm ecosystems, patch/minor bumps grouped per ecosystem),
+  with the monthly `dotnet-major-upgrade` workflow covering the cross-major
+  .NET jump Dependabot cannot make,
 * least-privilege workflow tokens (`contents: read` except where releasing
   requires write),
 * an end-to-end suite that verifies the security headers reach real browsers.
