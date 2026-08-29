@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# One release at a time, never cancelled mid-publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 # Least-privilege: this workflow verifies, publishes the container image to
 # GHCR and creates the GitHub Release.
 permissions:
