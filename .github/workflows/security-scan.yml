@@ -44,6 +44,9 @@ jobs:
           severity: HIGH,CRITICAL
           format: sarif
           output: trivy.sarif
+          # SARIF output ignores the severity filter unless this is set,
+          # which makes exit-code fire on LOW/MEDIUM noise.
+          limit-severities-for-sarif: true
           exit-code: "1"
 
       - name: upload findings to code scanning
