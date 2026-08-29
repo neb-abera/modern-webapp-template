@@ -1,13 +1,18 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main, master]
+  # Unfiltered pull_request: a PR stacked on a feature branch still gets
+  # scanned (see ci.yml).
   pull_request:
+  push:
     branches: [main, master]
   schedule:
     # Weekly scan so new queries run even without commits
     - cron: "30 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

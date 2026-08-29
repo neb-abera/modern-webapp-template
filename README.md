@@ -25,6 +25,11 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a mutation canary proving the tests catch planted bugs. CI runs exactly
   the same script, so green locally means green in CI,
 
+* **Delivery performance by default** — responses are compressed, Vite's
+  content-hashed assets are served `immutable` while the document stays
+  `no-cache`, and the e2e suite pins all of it, because an uncompressed
+  bundle or a cached document is a regression nothing else notices,
+
 * **Security by default** — CSP and companion response headers with tests
   pinning them, IP-partitioned rate limiting, non-root containers, CodeQL
   (C#, TypeScript, workflows) on every PR, GitHub Actions pinned to commit
@@ -114,6 +119,14 @@ It needs the [GitHub CLI](https://cli.github.com) authenticated as a repo
 admin, and it is safe to re-run. Everything else adapts automatically:
 release/image names follow your repository, Docker names follow your
 directory.
+
+## Deploying
+
+A production-proven Azure Container Apps pipeline ships as
+[`deploy.yml.example`](.github/workflows/deploy.yml.example) — deploys gated
+on green CI, secretless OIDC login, immutable image tags, and a post-deploy
+health gate. [`docs/deploying.md`](docs/deploying.md) has the one-time setup
+and the reasoning, host-agnostic.
 
 ## License
 
