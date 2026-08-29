@@ -29,7 +29,11 @@ Projects generated from this template ship with:
   .NET jump Dependabot cannot make,
 * least-privilege workflow tokens (`contents: read` except where releasing
   requires write),
-* an end-to-end suite that verifies the security headers reach real browsers.
+* an end-to-end suite that verifies the security headers reach real browsers,
+* continuous vulnerability search beyond static analysis: trivy scans the
+  production image for known CVEs and OWASP ZAP baseline-scans the running
+  container, on every PR and weekly (`security-scan.yml`); the two accepted
+  ZAP findings are documented in [.zap/rules.tsv](.zap/rules.tsv).
 
 GitHub does not inherit repo-level settings from templates (secret scanning +
 push protection, private vulnerability reporting, Dependabot alerts and

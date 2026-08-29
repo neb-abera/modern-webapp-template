@@ -1,0 +1,85 @@
+name: Security scan
+
+# Two vulnerability searches static analysis cannot do: known CVEs inside the
+# production image (trivy) and an attacker's-eye scan of the running app
+# (OWASP ZAP baseline). The weekly schedule matters as much as the PR run:
+# new CVEs are published against images that have not changed.
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "15 7 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image-scan:
+    name: container scan (trivy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: build production image
+        run: docker build -t scan-target .
+
+      - name: scan for HIGH/CRITICAL CVEs
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: scan-target
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy.sarif
+          exit-code: "1"
+
+      - name: upload findings to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          sarif_file: trivy.sarif
+
+  dast:
+    name: dast (ZAP baseline)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: build and start the production container
+        run: |
+          docker build -t scan-target .
+          docker run -d --rm --name app -p 127.0.0.1:8080:8080 scan-target
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz > /dev/null && break || sleep 1
+          done
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:8080
+          rules_file_name: .zap/rules.tsv
+          allow_issue_writing: false
+          fail_action: true
+
+      - name: app logs
+        if: always()
+        run: docker logs app 2>&1 | tail -40 || true
