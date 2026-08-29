@@ -30,8 +30,15 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
 
     steps:
+      - name: harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: log in to GHCR
@@ -50,6 +57,19 @@ jobs:
           docker build -t "$image:$TAG" -t "$image:latest" .
           docker push "$image:$TAG"
           docker push "$image:latest"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image:$TAG" | cut -d@ -f2)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+        id: push
+
+      # SLSA build provenance: consumers can verify the image was built by
+      # this workflow from this commit (gh attestation verify).
+      - name: attest image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: create release
         env:
