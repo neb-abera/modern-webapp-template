@@ -2,7 +2,8 @@
   <PropertyGroup>
     <!-- Must move in lockstep with the dotnet/sdk and dotnet/aspnet image
          tags in the Dockerfile. Dependabot bumps those tags but never this
-         property; .NET major upgrades are a manual three-line change. -->
+         property; scripts/check-dotnet-major.sh (run monthly by the
+         dotnet-major-upgrade workflow) moves all the sites together. -->
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

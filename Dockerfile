@@ -23,7 +23,8 @@ RUN npm run build
 #
 # The 10.0 tags here and on the runtime image must move in lockstep with
 # <TargetFramework> in server/Directory.Build.props. Dependabot bumps these
-# tags but never the TargetFramework — .NET major upgrades are manual.
+# tags but never the TargetFramework — the dotnet-major-upgrade workflow
+# (scripts/check-dotnet-major.sh) makes the cross-major jump.
 #
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS server-build
 WORKDIR /build/server
