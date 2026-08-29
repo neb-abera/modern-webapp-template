@@ -39,9 +39,12 @@ it was learned the hard way; keep them if you adapt it to another host.
    `/healthz` on the public FQDN afterwards, a broken deploy looks green.
 
 7. **If a CDN caches your responses** (e.g. Cloudflare in front of the app),
-   the cache rule and the purge step in the pipeline only work as a set: a
+   the cache rule and the purge job in the pipeline only work as a set: a
    cache rule without a purge on deploy serves stale pages, and neither half
-   is useful alone.
+   is useful alone. The example ships a `purge-edge-cache` job that reads
+   `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_PURGE_TOKEN` secrets (a token scoped
+   to *Zone → Cache Purge* only) and skips with a warning until they exist —
+   so it is safe before Cloudflare is configured and correct after.
 
 ## Configuration that reaches the browser
 
