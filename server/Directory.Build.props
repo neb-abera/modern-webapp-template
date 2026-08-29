@@ -1,5 +1,8 @@
 <Project>
   <PropertyGroup>
+    <!-- Must move in lockstep with the dotnet/sdk and dotnet/aspnet image
+         tags in the Dockerfile. Dependabot bumps those tags but never this
+         property; .NET major upgrades are a manual three-line change. -->
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
