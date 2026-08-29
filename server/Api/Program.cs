@@ -41,6 +41,11 @@ app.Use(async (context, next) =>
     headers.XContentTypeOptions = "nosniff";
     headers["Referrer-Policy"] = "no-referrer";
     headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()";
+    // OWASP Secure Headers: isolate the browsing context and keep resources
+    // same-origin (Spectre-class cross-origin leak mitigations).
+    headers["Cross-Origin-Opener-Policy"] = "same-origin";
+    headers["Cross-Origin-Resource-Policy"] = "same-origin";
+    headers.XFrameOptions = "DENY"; // legacy agents; CSP frame-ancestors covers the rest
     await next().ConfigureAwait(false);
 });
 
