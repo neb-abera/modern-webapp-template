@@ -44,6 +44,7 @@ LOG="$(mktemp)"
 
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
+  docker rm -f "$NAME-verify-e2e" > /dev/null 2>&1
   docker network rm "$NET" > /dev/null 2>&1
   rm -f "$LOG"
 }
@@ -120,7 +121,10 @@ else
 fi
 
 banner "Production image builds"
-if docker build -t "$IMAGE" . > "$LOG" 2>&1; then
+# VERIFY_DOCKER_BUILD_ARGS lets CI pass layer-cache flags; it changes how
+# fast the image builds, not what is built.
+# shellcheck disable=SC2086
+if docker build ${VERIFY_DOCKER_BUILD_ARGS:-} -t "$IMAGE" . > "$LOG" 2>&1; then
   pass "Production image built as $IMAGE"
 else
   tail -25 "$LOG"
@@ -138,12 +142,14 @@ if docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8
    && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff'; then
   pass "Container serves the client, the API, health and security headers"
 else
-  docker logs "$APP" 2>&1 | tail -10
+  docker logs "$APP" 2>&1 | tail -40
   fail "Production container smoke test"
 fi
 
 banner "End-to-end: Playwright against the production container"
-if docker run --rm --network "$NET" -v "$PWD/e2e":/src:ro -v "$NAME-npm:/npm-cache" \
+E2E_CTR="$NAME-verify-e2e"
+docker rm -f "$E2E_CTR" > /dev/null 2>&1
+if docker run --name "$E2E_CTR" --network "$NET" -v "$PWD/e2e":/src:ro -v "$NAME-npm:/npm-cache" \
      -e npm_config_cache=/npm-cache -e E2E_BASE_URL="http://$APP:8080" -e CI="${CI:-}" \
      "$PLAYWRIGHT_IMAGE" bash -c '
     set -e
@@ -152,11 +158,19 @@ if docker run --rm --network "$NET" -v "$PWD/e2e":/src:ro -v "$NAME-npm:/npm-cac
     npm ci --no-audit --no-fund
     npx playwright test
   ' 2>&1 | tee "$LOG"; then
+  docker rm -f "$E2E_CTR" > /dev/null 2>&1
   count_tests "$(grep -Eo '[0-9]+ passed' "$LOG" | tail -1 | grep -Eo '[0-9]+')" 0
   pass "End-to-end suite green against the production image"
 else
   count_tests "$(grep -Eo '[0-9]+ passed' "$LOG" | tail -1 | grep -Eo '[0-9]+')" \
               "$(grep -Eo '[0-9]+ failed' "$LOG" | tail -1 | grep -Eo '[0-9]+')"
+  # Traces are how you see what the browser saw; app logs are the other half.
+  rm -rf e2e-test-results
+  docker cp "$E2E_CTR":/w/test-results e2e-test-results > /dev/null 2>&1 \
+    && echo "playwright traces copied to e2e-test-results/"
+  docker rm -f "$E2E_CTR" > /dev/null 2>&1
+  echo "--- app logs (last 40 lines):"
+  docker logs "$APP" 2>&1 | tail -40
   fail "End-to-end suite"
 fi
 
