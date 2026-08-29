@@ -7,8 +7,9 @@
 # default open-PR limit (5 per entry) never queues updates behind unmerged
 # noise. Major updates still arrive as individual PRs.
 #
-# Not covered by Dependabot (manual): <TargetFramework> in
-# server/Directory.Build.props — see the lockstep note in the Dockerfile.
+# Not covered by Dependabot: <TargetFramework> in server/Directory.Build.props
+# and the cross-major jumps it gates — the dotnet-major-upgrade workflow
+# (scripts/check-dotnet-major.sh) covers those.
 version: 2
 updates:
   - package-ecosystem: github-actions

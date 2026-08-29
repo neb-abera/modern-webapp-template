@@ -21,9 +21,17 @@ NAME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
 IMAGE="$NAME:latest"
 NET="$NAME-verify-net"
 APP="$NAME-verify-app"
-SDK_IMAGE="mcr.microsoft.com/dotnet/sdk:10.0"
-NODE_IMAGE="node:24-alpine"
-PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
+# Toolchain images are derived from their sources of truth — the Dockerfile
+# (digest-pinned, kept current by Dependabot) and e2e/package.json — so this
+# script can never drift from what the build actually uses.
+SDK_IMAGE="$(sed -n 's|^FROM \(mcr\.microsoft\.com/dotnet/sdk:[^ ]*\) AS server-build$|\1|p' Dockerfile)"
+NODE_IMAGE="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-base$|\1|p' Dockerfile)"
+PLAYWRIGHT_VERSION="$(sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)"
+PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble"
+if [ -z "$SDK_IMAGE" ] || [ -z "$NODE_IMAGE" ] || [ -z "$PLAYWRIGHT_VERSION" ]; then
+  echo "error: could not derive toolchain images from Dockerfile / e2e/package.json" >&2
+  exit 1
+fi
 SMOKE_PORT="${SMOKE_PORT:-18080}"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
