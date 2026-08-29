@@ -35,12 +35,13 @@ public sealed class ApiTests : IDisposable
     // Table-driven example: adding a new failing case (TDD's "red" step) is a
     // one-line change.
     [Theory]
-    [InlineData("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")]
+    [InlineData("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")]
     [InlineData("X-Content-Type-Options", "nosniff")]
     [InlineData("Referrer-Policy", "no-referrer")]
     [InlineData("Permissions-Policy", "camera=(), geolocation=(), microphone=()")]
     [InlineData("Cross-Origin-Opener-Policy", "same-origin")]
     [InlineData("Cross-Origin-Resource-Policy", "same-origin")]
+    [InlineData("Cross-Origin-Embedder-Policy", "require-corp")]
     [InlineData("X-Frame-Options", "DENY")]
     public async Task SecurityHeadersAreAlwaysSent(string header, string expected)
     {
