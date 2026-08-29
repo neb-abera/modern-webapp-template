@@ -39,6 +39,9 @@ public sealed class ApiTests : IDisposable
     [InlineData("X-Content-Type-Options", "nosniff")]
     [InlineData("Referrer-Policy", "no-referrer")]
     [InlineData("Permissions-Policy", "camera=(), geolocation=(), microphone=()")]
+    [InlineData("Cross-Origin-Opener-Policy", "same-origin")]
+    [InlineData("Cross-Origin-Resource-Policy", "same-origin")]
+    [InlineData("X-Frame-Options", "DENY")]
     public async Task SecurityHeadersAreAlwaysSent(string header, string expected)
     {
         using var client = factory.CreateClient();
