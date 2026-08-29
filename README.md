@@ -31,6 +31,17 @@ Docker, gated by a test-driven verification suite, and secured by default.
   `no-cache`, and the e2e suite pins all of it, because an uncompressed
   bundle or a cached document is a regression nothing else notices,
 
+* **Prerendered first paint** — the routes listed in
+  `client/src/prerenderedRoutes.ts` are baked to real HTML at build time
+  (`client/tools/prerender.mjs` + `src/entry-server.tsx`) and hydrated in
+  the browser, so first paint does not wait for the React bundle; routes
+  that show live data stay client-rendered from the empty `spa.html`
+  fallback. The server maps extensionless URLs to their baked files
+  (`PrerenderedPages`), pipeline tests pin the middleware order that makes
+  it work, and an e2e test proves the home page renders with JavaScript
+  disabled. Adding a static page to the baked set is one line — see
+  [docs/manual-setup.md](docs/manual-setup.md),
+
 * **Security by default** — CSP and companion response headers with tests
   pinning them, IP-partitioned rate limiting, non-root containers, CodeQL
   (C#, TypeScript, workflows) on every PR, GitHub Actions pinned to commit
@@ -140,6 +151,11 @@ It needs the [GitHub CLI](https://cli.github.com) authenticated as a repo
 admin, and it is safe to re-run. Everything else adapts automatically:
 release/image names follow your repository, Docker names follow your
 directory.
+
+The complete list of things machinery cannot do for you — the automerge
+token, cloud credentials, Cloudflare cache rules, the prerender route list —
+lives in [docs/manual-setup.md](docs/manual-setup.md). Work through it once;
+each entry says why it is manual.
 
 ## Deploying
 
