@@ -1,4 +1,5 @@
 [![CI](https://github.com/neb-abera/modern-webapp-template/workflows/CI/badge.svg)](https://github.com/neb-abera/modern-webapp-template/actions)
+[![codecov](https://codecov.io/gh/neb-abera/modern-webapp-template/graph/badge.svg)](https://codecov.io/gh/neb-abera/modern-webapp-template)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/neb-abera/modern-webapp-template/badge)](https://scorecard.dev/viewer/?uri=github.com/neb-abera/modern-webapp-template)
 
 # Modern Web App Template
@@ -168,6 +169,12 @@ It needs the [GitHub CLI](https://cli.github.com) authenticated as a repo
 admin, and it is safe to re-run. Everything else adapts automatically:
 release/image names follow your repository, Docker names follow your
 directory.
+
+The coverage badge shows "unknown" until you add a `CODECOV_TOKEN`
+repository secret (from [codecov.io](https://about.codecov.io/) after
+enabling your repo there). Codecov is dashboard-only here — the blocking
+coverage floors are enforced by the verify suite itself — so this is
+optional and nothing fails without it.
 
 The complete list of things machinery cannot do for you — the automerge
 token, cloud credentials, Cloudflare cache rules, the prerender route list —

@@ -26,4 +26,8 @@ coverage/
 
 # Playwright traces copied out by scripts/verify.sh on e2e failure
 e2e-test-results/
+
+# Coverage reports exported by scripts/verify.sh in CI for the job summary
+# and the Codecov upload
+coverage-artifacts/
 *.tsbuildinfo
