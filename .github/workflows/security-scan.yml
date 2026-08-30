@@ -6,6 +6,9 @@ name: Security scan
 # new CVEs are published against images that have not changed.
 on:
   pull_request:
+  # Required checks must also run on queued merge groups if a merge queue is
+  # ever enabled (see ci.yml). Harmless while no queue exists.
+  merge_group:
   push:
     branches: [main, master]
   schedule:
@@ -22,6 +25,7 @@ jobs:
   image-scan:
     name: container scan (trivy)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
@@ -36,6 +40,9 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job never pushes; don't persist the token.
+          persist-credentials: false
 
       - name: build production image
         run: docker build -t scan-target .
@@ -61,6 +68,7 @@ jobs:
   dast:
     name: dast (ZAP baseline)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: harden runner
@@ -72,13 +80,17 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job never pushes; don't persist the token.
+          persist-credentials: false
 
       - name: build and start the production container
         run: |
           docker build -t scan-target .
           docker run -d --rm --name app -p 127.0.0.1:8080:8080 scan-target
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:8080/healthz > /dev/null && break || sleep 1
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:8080/healthz > /dev/null; then break; fi
+            sleep 1
           done
 
       - name: ZAP baseline scan

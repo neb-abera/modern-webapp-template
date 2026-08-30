@@ -18,8 +18,20 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
+      - name: harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          # Audit, not block: this job builds/runs containers, and container-side
+          # DNS bypasses harden-runner's resolver, so blocked lookups surface as
+          # refused raw-IP dials. Host-process jobs stay on block.
+          egress-policy: audit
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job never pushes; don't persist the token.
+          persist-credentials: false
 
       - name: run the verification suite
         run: ./scripts/verify.sh
@@ -27,6 +39,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: verify
+    timeout-minutes: 30
     permissions:
       contents: write
       packages: write
@@ -43,6 +56,10 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Publishing uses the GH_TOKEN env on gh/docker, never git push;
+          # don't persist the checkout token.
+          persist-credentials: false
 
       - name: log in to GHCR
         env:
@@ -65,18 +82,10 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
         id: push
 
-      # SLSA build provenance: consumers can verify the image was built by
-      # this workflow from this commit (gh attestation verify).
-      - name: attest image provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ steps.push.outputs.image }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
       # SBOM for the released image, generated from what was actually
       # pushed (not the source tree) and attached to the GitHub Release so
       # consumers can audit what the image contains without pulling it.
+      # Generated before the attestations so the SBOM itself can be attested.
       - name: generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
@@ -85,6 +94,39 @@ jobs:
           output-file: sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
+
+      # SLSA build provenance: consumers can verify the image was built by
+      # this workflow from this commit (gh attestation verify).
+      - name: attest image provenance
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      # Bind the SBOM to the image digest the same way, so a consumer can
+      # verify the SBOM describes exactly the image they pulled.
+      - name: attest SBOM
+        id: attest-sbom
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+      # The Sigstore bundles land in the release assets (not only the
+      # registry) so offline verification works and Scorecard's
+      # Signed-Releases check can see them (.sigstore.json is one of the
+      # signature extensions it recognizes).
+      - name: collect attestation bundles
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.attest-sbom.outputs.bundle-path }}
+        run: |
+          cp "$PROVENANCE_BUNDLE" provenance.sigstore.json
+          cp "$SBOM_BUNDLE" sbom.spdx.json.sigstore.json
 
       - name: create release
         env:
@@ -98,4 +140,4 @@ jobs:
             --title "Release $TAG" \
             --generate-notes \
             --notes "Container image: \`$image:$TAG\`" \
-            sbom.spdx.json
+            sbom.spdx.json provenance.sigstore.json sbom.spdx.json.sigstore.json

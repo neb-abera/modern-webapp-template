@@ -7,9 +7,19 @@ Only the latest release (and the `main` branch) receives security updates.
 ## Reporting a Vulnerability
 
 Please report vulnerabilities privately via
-[GitHub's private vulnerability reporting](../../security/advisories/new)
-rather than opening a public issue. You should receive a response within a
-week. Please include a proof of concept or reproduction steps where possible.
+[GitHub's private vulnerability reporting](https://github.com/neb-abera/modern-webapp-template/security/advisories/new)
+rather than opening a public issue. If you cannot use GitHub's flow, email
+<support@alias.abera.tech> instead. Please include a proof of concept or
+reproduction steps where possible.
+
+What to expect:
+
+* an acknowledgement within 7 days,
+* coordinated disclosure: we ask that you keep the report private until a
+  fix is released, and we will credit you in the advisory unless you prefer
+  otherwise,
+* a fix, or a status update explaining what is taking longer, within 90
+  days of the report.
 
 ## Hardening in this template
 
@@ -38,7 +48,8 @@ Projects generated from this template ship with:
 GitHub does not inherit repo-level settings from templates (secret scanning +
 push protection, private vulnerability reporting, Dependabot alerts and
 security updates, branch protection requiring every PR-gating check —
-`verify`, dependency review, CodeQL, trivy and ZAP). Running
+`verify`, the workflow/script lint, dependency review, CodeQL, trivy and
+ZAP). Running
 [`./scripts/setup.sh`](scripts/setup.sh) once on a generated repository
 enables all of them; `scripts/check-required-contexts.sh` (part of `make
 verify`) fails the suite if that required list and the workflows ever drift

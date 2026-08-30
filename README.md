@@ -147,8 +147,8 @@ One command finishes the setup — it renames the app after your repository and
 enables the repo-level GitHub settings templates cannot carry over (secret
 scanning, push protection, private vulnerability reporting, Dependabot
 alerts + security updates, and branch protection requiring every PR-gating
-check — `verify`, dependency review, CodeQL, the trivy container scan and
-the ZAP baseline scan):
+check — `verify`, the workflow/script lint, dependency review, CodeQL, the
+trivy container scan and the ZAP baseline scan):
 
 ```bash
 ./scripts/setup.sh

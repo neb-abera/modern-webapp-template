@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/neb-abera/modern-webapp-template/security/advisories/new
+    about: >-
+      Please report security issues privately via GitHub's advisory flow
+      (see SECURITY.md), never as a public issue.

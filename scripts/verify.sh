@@ -16,7 +16,7 @@
 
 set -u -o pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 NAME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
 IMAGE="$NAME:latest"
@@ -51,6 +51,7 @@ TESTS_FAILED=0
 FAILED_NAMES=""
 LOG="$(mktemp)"
 
+# shellcheck disable=SC2329  # invoked via the EXIT trap below
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
   docker rm -f "$NAME-verify-e2e" > /dev/null 2>&1
@@ -151,7 +152,7 @@ banner "Smoke: production container serves client, API and health"
 docker network create "$NET" > /dev/null 2>&1
 docker rm -f "$APP" > /dev/null 2>&1
 if docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" "$IMAGE" > /dev/null \
-   && for i in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
+   && for _ in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
    && curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null \
    && curl -fsS "http://localhost:$SMOKE_PORT/" | grep -q '<div id="root">' \
    && curl -fsS "http://localhost:$SMOKE_PORT/api/hello" | grep -q '"message":"Hello from the API"' \
