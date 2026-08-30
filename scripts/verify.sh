@@ -56,6 +56,22 @@ TESTS_FAILED=0
 FAILED_NAMES=""
 LOG="$(mktemp)"
 
+# When CI provides a step-summary file (GITHUB_STEP_SUMMARY), the run also
+# appends a markdown report of the same tally and exports the two coverage
+# reports to coverage-artifacts/ for the (optional) Codecov upload step.
+# Local runs are untouched: with the variable unset, everything below is a
+# no-op and the terminal output is identical either way.
+CURRENT_CHECK=""
+SUMMARY_ROWS=""
+SERVER_COVERAGE_PCT=""
+CLIENT_COVERAGE_PCT=""
+COV_OUT=""
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  COV_OUT="$PWD/coverage-artifacts"
+  rm -rf "$COV_OUT"
+  mkdir -p "$COV_OUT"
+fi
+
 # shellcheck disable=SC2329  # invoked via the EXIT trap below
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
@@ -66,7 +82,12 @@ cleanup() {
 trap cleanup EXIT
 
 banner() {
+  CURRENT_CHECK="$1"
   printf '\n%s== [%d/%d] %s ==%s\n' "$BOLD" "$((CHECKS_RUN + 1))" "$CHECKS_TOTAL" "$1" "$RESET"
+}
+
+summary_row() {
+  SUMMARY_ROWS="$SUMMARY_ROWS| $CURRENT_CHECK | $1 |\n"
 }
 
 tally() {
@@ -76,12 +97,14 @@ tally() {
 
 pass() {
   CHECKS_RUN=$((CHECKS_RUN + 1)); CHECKS_PASSED=$((CHECKS_PASSED + 1))
+  summary_row "pass"
   printf '%s[PASS]%s %s\n' "$GREEN" "$RESET" "$1"
   tally
 }
 
 fail() {
   CHECKS_RUN=$((CHECKS_RUN + 1)); CHECKS_FAILED=$((CHECKS_FAILED + 1))
+  summary_row "**FAIL**"
   FAILED_NAMES="$FAILED_NAMES  - $1\n"
   printf '%s[FAIL]%s %s\n' "$RED" "$RESET" "$1"
   tally
@@ -105,7 +128,14 @@ SERVER_COVERAGE_MIN=85
 # SERVER_COVERAGE_MIN — enforced here by parsing the cobertura report,
 # because the coverlet MTP extension collects but does not gate.
 server_tests() {
+  # In CI (COV_OUT set), mount coverage-artifacts/ so the cobertura report
+  # survives the container for the summary and the Codecov upload.
+  local cov_mount=()
+  if [ -n "$COV_OUT" ] && [ "${1:-}" = coverage ]; then
+    cov_mount=(-v "$COV_OUT":/covout)
+  fi
   docker run --rm -v "$PWD":/src:ro -v "$NAME-nuget:/root/.nuget" \
+    ${cov_mount[@]+"${cov_mount[@]}"} \
     -e COVERAGE_MODE="${1:-plain}" -e COVERAGE_MIN="$SERVER_COVERAGE_MIN" "$SDK_IMAGE" bash -c '
     set -e
     cp -r /src /w
@@ -114,6 +144,7 @@ server_tests() {
       dotnet test Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura
       report="$(find . -name "coverage.cobertura.*.xml" | head -1)"
       [ -n "$report" ] || { echo "error: no cobertura report produced" >&2; exit 1; }
+      if [ -d /covout ]; then cp "$report" /covout/server-cobertura.xml; fi
       rate="$(sed -n "s/.*<coverage[^>]*line-rate=\"\([0-9.]*\)\".*/\1/p" "$report" | head -1)"
       awk -v r="$rate" -v m="$COVERAGE_MIN" "BEGIN {
         printf \"server line coverage: %.1f%% (minimum %d%%)\n\", r * 100, m
@@ -140,6 +171,7 @@ fi
 banner "Server: build + unit tests (warnings as errors) + coverage"
 if server_tests coverage 2>&1 | tee "$LOG"; then
   count_tests "$(server_passed)" "$(server_failed)"
+  SERVER_COVERAGE_PCT="$(sed -n 's/^server line coverage: \([0-9.]*\)%.*/\1/p' "$LOG" | head -1)"
   pass "Server builds clean, all tests green, coverage >= ${SERVER_COVERAGE_MIN}%"
 else
   count_tests "$(server_passed)" "$(server_failed)"
@@ -149,7 +181,14 @@ fi
 # The client's coverage thresholds live in vite.config.ts (test.coverage);
 # `npm run test` runs vitest with --coverage, which fails below them.
 banner "Client: typecheck + lint + unit tests + coverage"
-if docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
+# GITHUB_ACTIONS is forwarded so Vitest's github-actions reporter (inline PR
+# annotations — see client/vite.config.ts) activates in CI; in CI the
+# coverage output is also mounted out for the summary and Codecov upload.
+client_cov_mount=()
+if [ -n "$COV_OUT" ]; then client_cov_mount=(-v "$COV_OUT":/covout); fi
+if docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache \
+    ${client_cov_mount[@]+"${client_cov_mount[@]}"} \
+    -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" "$NODE_IMAGE" sh -c '
     set -e
     cp -r /src/client /w
     cd /w
@@ -157,8 +196,14 @@ if docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cac
     npm run typecheck
     npm run lint
     npm run test
+    if [ -d /covout ]; then
+      cp coverage/coverage-summary.json coverage/lcov.info /covout/
+    fi
   ' 2>&1 | tee "$LOG"; then
   count_tests "$(grep -Eo 'Tests[^0-9]*[0-9]+ passed' "$LOG" | grep -Eo '[0-9]+' | tail -1)" 0
+  if [ -n "$COV_OUT" ] && [ -f "$COV_OUT/coverage-summary.json" ]; then
+    CLIENT_COVERAGE_PCT="$(sed -n 's/.*"total": *{"lines":{[^}]*"pct":\([0-9.]*\).*/\1/p' "$COV_OUT/coverage-summary.json" | head -1)"
+  fi
   pass "Client typechecks, lints, all tests green, coverage above thresholds"
 else
   fail "Client typecheck/lint/tests/coverage"
@@ -232,12 +277,18 @@ fi
 banner "End-to-end: Playwright against the production container"
 E2E_CTR="$NAME-verify-e2e"
 docker rm -f "$E2E_CTR" > /dev/null 2>&1
+# The suite is copied to /w/e2e with GITHUB_WORKSPACE=/w so that in CI the
+# github reporter's workspace-relative annotation paths (e2e/<file>) match
+# the repo layout; GITHUB_ACTIONS activates that reporter (see
+# e2e/playwright.config.ts). Both are inert outside GitHub Actions.
 if docker run --name "$E2E_CTR" --network "$NET" -v "$PWD/e2e":/src:ro -v "$NAME-npm:/npm-cache" \
      -e npm_config_cache=/npm-cache -e E2E_BASE_URL="http://$APP:8080" -e CI="${CI:-}" \
+     -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" -e GITHUB_WORKSPACE=/w \
      "$PLAYWRIGHT_IMAGE" bash -c '
     set -e
-    cp -r /src /w
-    cd /w
+    mkdir -p /w
+    cp -r /src /w/e2e
+    cd /w/e2e
     npm ci --no-audit --no-fund
     npx playwright test
   ' 2>&1 | tee "$LOG"; then
@@ -249,7 +300,7 @@ else
               "$(grep -Eo '[0-9]+ failed' "$LOG" | tail -1 | grep -Eo '[0-9]+')"
   # Traces are how you see what the browser saw; app logs are the other half.
   rm -rf e2e-test-results
-  docker cp "$E2E_CTR":/w/test-results e2e-test-results > /dev/null 2>&1 \
+  docker cp "$E2E_CTR":/w/e2e/test-results e2e-test-results > /dev/null 2>&1 \
     && echo "playwright traces copied to e2e-test-results/"
   docker rm -f "$E2E_CTR" > /dev/null 2>&1
   echo "--- app logs (last 40 lines):"
@@ -275,7 +326,28 @@ if ! cmp -s server/Api/Program.cs "$BACKUP"; then
 else
   restore_canary
   CHECKS_RUN=$((CHECKS_RUN + 1)); CHECKS_SKIPPED=$((CHECKS_SKIPPED + 1))
+  summary_row "skipped"
   printf '%s[SKIP]%s Mutation canary (could not plant the mutation)\n' "$YELLOW" "$RESET"
+fi
+
+# The same tally as the terminal output, rendered as markdown on the CI run
+# page. Zero duplicate work: every number is parsed from the run above.
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    printf '## Verification suite\n\n'
+    printf '| Check | Result |\n'
+    printf '| --- | --- |\n'
+    printf '%b' "$SUMMARY_ROWS"
+    printf '\n'
+    printf '**Checks:** %d passed, %d failed, %d skipped (of %d) &nbsp;·&nbsp; **Tests:** %d passed, %d failed\n\n' \
+      "$CHECKS_PASSED" "$CHECKS_FAILED" "$CHECKS_SKIPPED" "$CHECKS_TOTAL" "$TESTS_PASSED" "$TESTS_FAILED"
+    printf '| Coverage | Measured | Blocking floor |\n'
+    printf '| --- | --- | --- |\n'
+    printf '| Server (lines) | %s%% | %d%% (scripts/verify.sh) |\n' \
+      "${SERVER_COVERAGE_PCT:-?}" "$SERVER_COVERAGE_MIN"
+    printf '| Client (lines) | %s%% | 90%% (client/vite.config.ts thresholds) |\n' \
+      "${CLIENT_COVERAGE_PCT:-?}"
+  } >> "$GITHUB_STEP_SUMMARY"
 fi
 
 printf '\n%s========================= VERIFICATION COMPLETE =========================%s\n' "$BOLD" "$RESET"
