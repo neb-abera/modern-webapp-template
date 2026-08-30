@@ -28,6 +28,12 @@ jobs:
     # The full suite (build, tests, image, e2e) normally finishes well inside
     # this; a hung container should not hold the runner for six hours.
     timeout-minutes: 30
+    # The Codecov upload below is optional (dashboard only) and must not
+    # fail the gate when the token is absent — a fresh repository generated
+    # from this template has no CODECOV_TOKEN secret. A secret cannot be
+    # used in `if:` directly, so it is routed through job-level env.
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - name: harden runner
@@ -54,6 +60,18 @@ jobs:
         env:
           VERIFY_DOCKER_BUILD_ARGS: --load --cache-from type=gha --cache-to type=gha,mode=max
         run: ./scripts/verify.sh
+
+      # Dashboard-only: the blocking coverage floors are enforced in-job by
+      # verify.sh (server, 85% lines) and vitest's coverage thresholds
+      # (client, 90% lines), so this works with or without a Codecov
+      # account. verify.sh exports both reports to coverage-artifacts/
+      # whenever GITHUB_STEP_SUMMARY is set, as it is here.
+      - name: upload coverage to Codecov (dashboard only, needs CODECOV_TOKEN)
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage-artifacts/server-cobertura.xml,coverage-artifacts/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       # The four delivery/UI bugs that reach production are the ones nothing
       # opened in a browser; when the browser suite fails, the trace is how
