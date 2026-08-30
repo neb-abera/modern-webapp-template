@@ -33,6 +33,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
 
     env:
@@ -45,6 +46,8 @@ jobs:
         with:
           # Be explicit about the commit that passed the checks.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # This job never pushes to git; don't persist the token.
+          persist-credentials: false
 
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.2.0
@@ -109,6 +112,7 @@ jobs:
   # not correctness. Harmlessly skips when the secrets are unset.
   purge-edge-cache:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: deploy
     steps:
       - name: Purge Cloudflare cache

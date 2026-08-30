@@ -1,0 +1,21 @@
+# Normalize line endings: LF in the repository, always. The containers the
+# toolchain runs in are Linux; a CRLF shell script or Dockerfile checked out
+# on Windows would break them.
+* text=auto eol=lf
+
+# Binary files: never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary

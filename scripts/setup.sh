@@ -6,13 +6,15 @@
 #
 # What it does:
 #   1. renames the app after your repository (page title, heading, e2e
-#      expectation, README badge and links) and pushes the change
+#      expectation, README badge and links, SECURITY.md advisory URL) and
+#      pushes the change
 #   2. enables the GitHub security settings templates cannot carry over:
 #      secret scanning, push protection, private vulnerability reporting,
 #      Dependabot alerts and security updates
 #   3. enables branch protection on the default branch requiring every check
-#      that gates a PR: the CI (`verify`) suite, dependency review, CodeQL,
-#      the trivy container scan and the ZAP baseline scan
+#      that gates a PR: the CI (`verify`) suite, the workflow/script lint,
+#      dependency review, CodeQL, the trivy container scan and the ZAP
+#      baseline scan
 #
 # Requirements: git, and the GitHub CLI (`gh`, https://cli.github.com)
 # authenticated as an admin of the repository. Safe to re-run: every step is
@@ -62,14 +64,17 @@ if [ "$owner_repo" = "$TEMPLATE_OWNER_REPO" ]; then
   warn "this is the template itself; skipping the rename"
 else
   step "Renaming the app to \"$repo\""
-  NEW_NAME="$repo" perl -pi -e 's/\QModern Web App\E/$ENV{NEW_NAME}/g' \
+  NEW_NAME="$repo" OLD_NAME="$TEMPLATE_NAME" perl -pi -e 's/\Q$ENV{OLD_NAME}\E/$ENV{NEW_NAME}/g' \
     client/index.html client/src/App.tsx e2e/smoke.spec.ts README.md
-  NEW_REPO="$owner_repo" perl -pi -e 's#\Qneb-abera/modern-webapp-template\E#$ENV{NEW_REPO}#g' \
-    README.md
+  # README links and the private-advisory URLs (SECURITY.md and the issue
+  # template contact link) point at the generated repository, not the
+  # template.
+  NEW_REPO="$owner_repo" OLD_REPO="$TEMPLATE_OWNER_REPO" perl -pi -e 's#\Q$ENV{OLD_REPO}\E#$ENV{NEW_REPO}#g' \
+    README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
   if git diff --quiet; then
     done_ "already renamed"
   else
-    git add client/index.html client/src/App.tsx e2e/smoke.spec.ts README.md
+    git add client/index.html client/src/App.tsx e2e/smoke.spec.ts README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
     git commit -q -m "Rename app after repository ($repo) via scripts/setup.sh"
     if git push -q origin "HEAD:$default_branch" 2> /dev/null; then
       done_ "renamed and pushed to $default_branch"
@@ -109,7 +114,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["verify", "dependency review", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)", "container scan (trivy)", "dast (ZAP baseline)"]
+    "contexts": ["verify", "lint (actionlint + shellcheck)", "dependency review", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)", "container scan (trivy)", "dast (ZAP baseline)"]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": null,
@@ -118,7 +123,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
   "allow_deletions": false
 }
 JSON
-done_ "verify + dependency review + CodeQL + trivy + ZAP checks required, strict, enforced for admins"
+done_ "verify + lint + dependency review + CodeQL + trivy + ZAP checks required, strict, enforced for admins"
 
 #
 # 4. Commit signing — verified commits, out of the box
