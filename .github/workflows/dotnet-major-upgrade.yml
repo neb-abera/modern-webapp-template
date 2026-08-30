@@ -36,6 +36,9 @@ jobs:
         with:
           branch: chore/dotnet-major-upgrade
           delete-branch: true
+          # Commit via GitHub's API so the commit is signed by GitHub itself;
+          # branches requiring Verified commits reject CLI-made bot commits.
+          sign-commits: true
           commit-message: "Upgrade to .NET ${{ steps.check.outputs.new-version }}"
           title: "Upgrade to .NET ${{ steps.check.outputs.new-version }}"
           body-path: ${{ runner.temp }}/dotnet-major-summary.md

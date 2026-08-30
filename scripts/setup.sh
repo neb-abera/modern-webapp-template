@@ -113,4 +113,23 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
 JSON
 done_ "verify + CodeQL checks required, strict, enforced for admins"
 
+#
+# 4. Commit signing — verified commits, out of the box
+#
+# setup-signing.sh creates a signing key if this machine has none, configures
+# this repository to sign, and registers the key with GitHub. Only when all
+# of that succeeds does the branch start REQUIRING signatures — a repository
+# that demands signatures from someone whose machine cannot produce them yet
+# would lock its own adopter out on day one.
+#
+
+step "Setting up commit signing"
+if ./scripts/setup-signing.sh; then
+  gh api -X POST "repos/$owner_repo/branches/$default_branch/protection/required_signatures" > /dev/null
+  done_ "commits sign automatically, and $default_branch requires Verified commits"
+else
+  warn "signing not configured; $default_branch does NOT require signatures."
+  warn "enable later: ./scripts/setup-signing.sh && gh api -X POST repos/$owner_repo/branches/$default_branch/protection/required_signatures"
+fi
+
 printf '\n%sSetup complete.%s Every future change now goes through a PR gated on the\nverification suite and CodeQL. Start developing with: make dev\n' "$BOLD" "$RESET"
