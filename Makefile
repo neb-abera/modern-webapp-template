@@ -1,4 +1,4 @@
-.PHONY: run dev shell verify test-server test-client e2e clean help
+.PHONY: run dev shell verify test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -29,6 +29,11 @@ shell: ## open a development shell inside the toolchain image
 	docker build -t $(IMAGE)-dev:latest --target dev .
 	docker rm -f $(IMAGE)-dev 2>/dev/null || true
 	docker run --rm -it --name $(IMAGE)-dev -v $(CURDIR):/work -w /work $(IMAGE)-dev:latest bash
+
+load: ## run the k6 load harness against the production-like app
+	docker compose up -d --build app
+	docker compose --profile load run --rm k6
+	docker compose down
 
 verify: ## run the full verification suite with a pass/fail tally
 	./scripts/verify.sh

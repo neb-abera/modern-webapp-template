@@ -29,7 +29,9 @@ RUN npm run build
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS server-build
 WORKDIR /build/server
 COPY server/ ./
-RUN dotnet publish Api/Api.csproj -c Release -o /out
+# ReadyToRun precompiles IL for faster cold starts (Container Apps scale
+# from zero); see docs/performance.md for the further Native AOT option.
+RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true
 
 #
 # Development toolchain (used by `make shell` and the dev compose profile):
