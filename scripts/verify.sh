@@ -4,12 +4,13 @@
 # pass/fail count and a final summary. Everything runs in containers, so the
 # host needs only Docker and git. This mirrors what CI gates before a merge:
 #
-#   1. server: build + unit tests (warnings as errors)
-#   2. client: typecheck + lint (Biome) + unit tests
-#   3. the production image builds
-#   4. smoke: the running container serves client, API, health, security headers
-#   5. end-to-end: Playwright against the production container
-#   6. mutation canary: a planted server bug must fail the tests
+#   1. required checks: branch protection and the PR-gating workflows agree
+#   2. server: build + unit tests (warnings as errors, locked-mode restore)
+#   3. client: typecheck + lint (Biome) + unit tests
+#   4. the production image builds
+#   5. smoke: the running container serves client, API, health, security headers
+#   6. end-to-end: Playwright against the production container
+#   7. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -40,7 +41,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=6
+CHECKS_TOTAL=7
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -94,7 +95,7 @@ server_tests() {
     set -e
     cp -r /src /w
     cd /w/server
-    dotnet test Api.Tests -c Release
+    dotnet test Api.Tests -c Release -p:RestoreLockedMode=true
   '
 }
 
@@ -102,6 +103,13 @@ server_tests() {
 # succeeded: N"; older runners print "Passed: N / Failed: N".
 server_passed() { grep -Eo 'succeeded: [0-9]+|Passed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 server_failed() { grep -Eo 'failed: [0-9]+|Failed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
+
+banner "Required checks: setup.sh's contexts match the PR-gating workflows"
+if ./scripts/check-required-contexts.sh 2>&1 | tee "$LOG"; then
+  pass "Branch-protection contexts and PR-gating job names agree"
+else
+  fail "Required-checks drift guard"
+fi
 
 banner "Server: build + unit tests (warnings as errors)"
 if server_tests 2>&1 | tee "$LOG"; then

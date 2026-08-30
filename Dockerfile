@@ -31,7 +31,7 @@ WORKDIR /build/server
 COPY server/ ./
 # ReadyToRun precompiles IL for faster cold starts (Container Apps scale
 # from zero); see docs/performance.md for the further Native AOT option.
-RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true
+RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true -p:RestoreLockedMode=true
 
 #
 # Development toolchain (used by `make shell` and the dev compose profile):
@@ -56,4 +56,10 @@ WORKDIR /app
 COPY --from=server-build /out ./
 COPY --from=client-build /build/client/dist ./wwwroot
 EXPOSE 8080
+# Chiseled images carry no shell or curl, so the healthcheck re-enters the
+# app binary in --healthcheck mode (see Program.cs), which probes /healthz.
+# Compose inherits this, so `depends_on: condition: service_healthy` and
+# `docker compose up --wait` work against the production image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["dotnet", "Api.dll", "--healthcheck"]
 ENTRYPOINT ["dotnet", "Api.dll"]

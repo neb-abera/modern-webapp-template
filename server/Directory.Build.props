@@ -11,5 +11,11 @@
     <AnalysisLevel>latest-all</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Every project keeps a packages.lock.json, and CI/verify restores run
+         with RestoreLockedMode so the packages tested are exactly the ones
+         committed — a NuGet mirror can't substitute versions unnoticed.
+         Dependabot updates the lock files together with
+         Directory.Packages.props. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>
