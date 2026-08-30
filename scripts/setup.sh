@@ -98,6 +98,11 @@ gh api -X PUT "repos/$owner_repo/private-vulnerability-reporting" > /dev/null
 done_ "private vulnerability reporting"
 gh api -X PUT "repos/$owner_repo/vulnerability-alerts" > /dev/null
 done_ "Dependabot alerts"
+# Merged PR branches delete themselves; without this every merged PR leaves
+# a dead branch behind, and the branch list turns to noise within a few
+# dozen PRs.
+gh api -X PATCH "repos/$owner_repo" -F delete_branch_on_merge=true > /dev/null
+done_ "merged PR branches are deleted automatically"
 
 #
 # 3. Branch protection requiring every PR-gating check
