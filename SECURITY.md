@@ -28,7 +28,10 @@ Projects generated from this template ship with:
 * security response headers on every response (CSP, `nosniff`,
   `Referrer-Policy`, `Permissions-Policy`) with tests pinning them down,
 * IP-partitioned rate limiting on the API,
-* a distroless-style chiseled production image running as a non-root user,
+* a distroless-style chiseled production image running as a non-root user —
+  declared explicitly (`USER $APP_UID` in the Dockerfile) and asserted by
+  the verify suite's smoke check, so a base-image change cannot silently
+  revert it to root,
   containing only the published app,
 * CodeQL static analysis of the C#, TypeScript and workflow files on every
   pull request and weekly,

@@ -9,6 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- Line-coverage collection for the MTP runner (the coverlet flag).
+         The extension collects but does not gate; verify.sh parses the
+         cobertura report and enforces the minimum. -->
+    <PackageReference Include="coverlet.MTP" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
   <ItemGroup>

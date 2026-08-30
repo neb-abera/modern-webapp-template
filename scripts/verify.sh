@@ -6,11 +6,16 @@
 #
 #   1. required checks: branch protection and the PR-gating workflows agree
 #   2. server: build + unit tests (warnings as errors, locked-mode restore)
-#   3. client: typecheck + lint (Biome) + unit tests
-#   4. the production image builds
-#   5. smoke: the running container serves client, API, health, security headers
-#   6. end-to-end: Playwright against the production container
-#   7. mutation canary: a planted server bug must fail the tests
+#      + line coverage at or above SERVER_COVERAGE_MIN
+#   3. client: typecheck + lint (Biome) + unit tests + coverage thresholds
+#      (vitest.config's coverage.thresholds fail the run on their own)
+#   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
+#      generated client types (client/src/api-types.d.ts) match the code
+#   5. the production image builds
+#   6. smoke: the running container serves client, API, health, security
+#      headers — and runs as a non-root user
+#   7. end-to-end: Playwright against the production container
+#   8. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -41,7 +46,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=7
+CHECKS_TOTAL=8
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -89,14 +94,34 @@ count_tests() {
   TESTS_FAILED=$((TESTS_FAILED + ${failed:-0}))
 }
 
+# Server line coverage the tests must reach. Measured 92% on 2026-08; the
+# gate sits below that so a reasonable refactor doesn't break the build,
+# while a change landing meaningful untested logic does.
+SERVER_COVERAGE_MIN=85
+
 # Run the server test suite in the SDK container against a copy of the tree.
-# Named volumes cache NuGet packages between runs.
+# Named volumes cache NuGet packages between runs. With "coverage", the run
+# also collects line coverage (coverlet.MTP) and fails below
+# SERVER_COVERAGE_MIN — enforced here by parsing the cobertura report,
+# because the coverlet MTP extension collects but does not gate.
 server_tests() {
-  docker run --rm -v "$PWD":/src:ro -v "$NAME-nuget:/root/.nuget" "$SDK_IMAGE" bash -c '
+  docker run --rm -v "$PWD":/src:ro -v "$NAME-nuget:/root/.nuget" \
+    -e COVERAGE_MODE="${1:-plain}" -e COVERAGE_MIN="$SERVER_COVERAGE_MIN" "$SDK_IMAGE" bash -c '
     set -e
     cp -r /src /w
     cd /w/server
-    dotnet test Api.Tests -c Release -p:RestoreLockedMode=true
+    if [ "$COVERAGE_MODE" = coverage ]; then
+      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura
+      report="$(find . -name "coverage.cobertura.*.xml" | head -1)"
+      [ -n "$report" ] || { echo "error: no cobertura report produced" >&2; exit 1; }
+      rate="$(sed -n "s/.*<coverage[^>]*line-rate=\"\([0-9.]*\)\".*/\1/p" "$report" | head -1)"
+      awk -v r="$rate" -v m="$COVERAGE_MIN" "BEGIN {
+        printf \"server line coverage: %.1f%% (minimum %d%%)\n\", r * 100, m
+        exit (r * 100 >= m) ? 0 : 1
+      }"
+    else
+      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true
+    fi
   '
 }
 
@@ -112,16 +137,18 @@ else
   fail "Required-checks drift guard"
 fi
 
-banner "Server: build + unit tests (warnings as errors)"
-if server_tests 2>&1 | tee "$LOG"; then
+banner "Server: build + unit tests (warnings as errors) + coverage"
+if server_tests coverage 2>&1 | tee "$LOG"; then
   count_tests "$(server_passed)" "$(server_failed)"
-  pass "Server builds clean and all tests are green"
+  pass "Server builds clean, all tests green, coverage >= ${SERVER_COVERAGE_MIN}%"
 else
   count_tests "$(server_passed)" "$(server_failed)"
-  fail "Server build/tests"
+  fail "Server build/tests/coverage"
 fi
 
-banner "Client: typecheck + lint + unit tests"
+# The client's coverage thresholds live in vite.config.ts (test.coverage);
+# `npm run test` runs vitest with --coverage, which fails below them.
+banner "Client: typecheck + lint + unit tests + coverage"
 if docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
     set -e
     cp -r /src/client /w
@@ -132,10 +159,44 @@ if docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cac
     npm run test
   ' 2>&1 | tee "$LOG"; then
   count_tests "$(grep -Eo 'Tests[^0-9]*[0-9]+ passed' "$LOG" | grep -Eo '[0-9]+' | tail -1)" 0
-  pass "Client typechecks, lints and all tests are green"
+  pass "Client typechecks, lints, all tests green, coverage above thresholds"
 else
-  fail "Client typecheck/lint/tests"
+  fail "Client typecheck/lint/tests/coverage"
 fi
+
+banner "OpenAPI contract: committed spec and generated client types match the code"
+# The server emits openapi.json at build time (Microsoft.Extensions.
+# ApiDescription.Server) and the client's api-types.d.ts is generated from
+# it. Both are committed; regenerate both here from the current code and
+# fail on any difference, so the server's records and the client's types
+# cannot silently diverge. Same pattern as any generated-file gate: the
+# committed artifact must be reproducible from source.
+CONTRACT_OUT="$(mktemp -d)"
+if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/root/.nuget" "$SDK_IMAGE" bash -c '
+    set -e
+    cp -r /src /w
+    cd /w/server
+    dotnet build Api -c Release -p:RestoreLockedMode=true
+    cp Api/openapi.json /out/openapi.json
+  ' > "$LOG" 2>&1 \
+   && docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-npm:/npm-cache" \
+        -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
+    set -e
+    cp -r /src/client /w
+    cd /w
+    npm ci --no-audit --no-fund
+    npx openapi-typescript /out/openapi.json --output /out/api-types.d.ts
+  ' >> "$LOG" 2>&1 \
+   && diff -u server/Api/openapi.json "$CONTRACT_OUT/openapi.json" \
+   && diff -u client/src/api-types.d.ts "$CONTRACT_OUT/api-types.d.ts"; then
+  pass "openapi.json and api-types.d.ts are exactly what the code generates"
+else
+  tail -25 "$LOG"
+  echo "regenerate with: a server build (emits server/Api/openapi.json)," >&2
+  echo "then 'npm run generate:api-types' in client/, and commit both" >&2
+  fail "OpenAPI contract drift (spec or generated types are stale)"
+fi
+rm -rf "$CONTRACT_OUT" 2>/dev/null || true
 
 banner "Production image builds"
 # VERIFY_DOCKER_BUILD_ARGS lets CI pass layer-cache flags; it changes how
@@ -148,16 +209,21 @@ else
   fail "Production image build"
 fi
 
-banner "Smoke: production container serves client, API and health"
+banner "Smoke: production container serves client, API and health, as non-root"
 docker network create "$NET" > /dev/null 2>&1
 docker rm -f "$APP" > /dev/null 2>&1
-if docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" "$IMAGE" > /dev/null \
+# Non-root proof: the image's configured user must be a non-zero numeric
+# uid (the Dockerfile sets USER \$APP_UID, 1654 in the chiseled base). The
+# chiseled runtime has no shell to run `id` in, so the image config is the
+# assertion surface; empty (root default), "root" and "0" all fail this.
+if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
+   && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" "$IMAGE" > /dev/null \
    && for _ in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
    && curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null \
    && curl -fsS "http://localhost:$SMOKE_PORT/" | grep -q '<div id="root">' \
    && curl -fsS "http://localhost:$SMOKE_PORT/api/hello" | grep -q '"message":"Hello from the API"' \
    && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff'; then
-  pass "Container serves the client, the API, health and security headers"
+  pass "Container serves the client, API, health and security headers as non-root"
 else
   docker logs "$APP" 2>&1 | tail -40
   fail "Production container smoke test"
