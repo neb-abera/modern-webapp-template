@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx && node tools/prerender.mjs",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
+    "generate:api-types": "openapi-typescript ../server/Api/openapi.json --output src/api-types.d.ts",
     "lint": "biome check .",
     "format": "biome check --write ."
   },
@@ -25,7 +26,9 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.0",
+    "@vitest/coverage-v8": "4.1.11",
     "jsdom": "30.0.1",
+    "openapi-typescript": "6.7.6",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.11"

@@ -38,7 +38,15 @@ it was learned the hard way; keep them if you adapt it to another host.
    revision is *created*, not when it is *serving* — without polling
    `/healthz` on the public FQDN afterwards, a broken deploy looks green.
 
-7. **If a CDN caches your responses** (e.g. Cloudflare in front of the app),
+7. **Give the app time to drain.** On every revision swap the old container
+   gets SIGTERM, then SIGKILL when the grace period runs out. The app's
+   shutdown timeout is 8 seconds (`HostOptions.ShutdownTimeout` in
+   `Program.cs`, pinned by a test) — chosen to fit inside Docker's 10-second
+   default, the tightest window it runs under. Azure Container Apps defaults
+   `terminationGracePeriodSeconds` to 30; if you set it explicitly, keep it
+   above 10 so the drain window never shrinks below what the app expects.
+
+8. **If a CDN caches your responses** (e.g. Cloudflare in front of the app),
    the cache rule and the purge job in the pipeline only work as a set: a
    cache rule without a purge on deploy serves stale pages, and neither half
    is useful alone. The example ships a `purge-edge-cache` job that reads

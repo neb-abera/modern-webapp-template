@@ -26,5 +26,22 @@ export default defineConfig(({ isSsrBuild }) => ({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     globals: false,
+    coverage: {
+      // The unit suite renders through App/entry-server, so source coverage
+      // is what these tests actually exercise. main.tsx is the browser
+      // bootstrap (createRoot/hydrateRoot against a real document) — it only
+      // runs in a browser, and the e2e suite covers it end to end.
+      include: ["src/**"],
+      exclude: ["src/main.tsx"],
+      // Measured 2026-08: 100% statements/lines/functions, 90% branches.
+      // Thresholds sit below that so a reasonable refactor doesn't break
+      // the build, while a change landing meaningful untested logic does.
+      thresholds: {
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        branches: 85,
+      },
+    },
   },
 }));
