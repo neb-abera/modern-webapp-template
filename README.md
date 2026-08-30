@@ -20,11 +20,12 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a Playwright end-to-end suite that runs against the *production image*,
   not a dev server,
 
-* **One verification suite everywhere** — `make verify` runs six checks with
-  a running pass/fail tally: server build+tests (warnings as errors), client
-  typecheck+lint+tests, production image build, container smoke test, e2e,
-  and a mutation canary proving the tests catch planted bugs. CI runs exactly
-  the same script, so green locally means green in CI,
+* **One verification suite everywhere** — `make verify` runs seven checks
+  with a running pass/fail tally: a drift guard proving branch protection
+  requires every PR-gating check, server build+tests (warnings as errors),
+  client typecheck+lint+tests, production image build, container smoke test,
+  e2e, and a mutation canary proving the tests catch planted bugs. CI runs
+  exactly the same script, so green locally means green in CI,
 
 * **Observability by default** — OpenTelemetry traces and metrics on every
   request, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and
@@ -145,8 +146,9 @@ runs in a container.
 One command finishes the setup — it renames the app after your repository and
 enables the repo-level GitHub settings templates cannot carry over (secret
 scanning, push protection, private vulnerability reporting, Dependabot
-alerts + security updates, and branch protection requiring the `verify` and
-CodeQL checks):
+alerts + security updates, and branch protection requiring every PR-gating
+check — `verify`, dependency review, CodeQL, the trivy container scan and
+the ZAP baseline scan):
 
 ```bash
 ./scripts/setup.sh
