@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Api.Tests;
@@ -51,6 +54,21 @@ public sealed class ApiTests : IDisposable
 
         Assert.True(response.Headers.TryGetValues(header, out var values), $"missing header {header}");
         Assert.Equal(expected, Assert.Single(values));
+    }
+
+    // Redeploys deliver SIGTERM, and Docker sends SIGKILL after
+    // stop_grace_period (default 10s, pinned in compose.yaml) — but the
+    // ASP.NET Core host's default shutdown timeout is 30s, so with no
+    // configuration every in-flight request is hard-killed on redeploy.
+    // Pin the configured timeout inside the orchestrator's window.
+    [Fact]
+    public void ShutdownTimeoutFitsInsideTheDockerStopGracePeriod()
+    {
+        var hostOptions = factory.Services.GetRequiredService<IOptions<HostOptions>>().Value;
+
+        Assert.Equal(TimeSpan.FromSeconds(8), hostOptions.ShutdownTimeout);
+        Assert.True(hostOptions.ShutdownTimeout < TimeSpan.FromSeconds(10),
+            "shutdown timeout must finish inside Docker's 10s SIGTERM->SIGKILL window");
     }
 
     [Fact]

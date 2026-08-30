@@ -10,6 +10,12 @@ services:
       target: runtime
     ports:
       - "8080:8080"
+    # SIGTERM -> SIGKILL window on stop and redeploy. This is Docker's
+    # default, written down because the app depends on it: the server's
+    # shutdown timeout is 8s (HostOptions in Program.cs, pinned by a test)
+    # so in-flight requests drain and the process exits before the kill.
+    # If you raise one, keep the other inside it.
+    stop_grace_period: 10s
     # Chromium hard-upgrades any host named `app` to HTTPS (the entire .app
     # TLD is HSTS-preloaded, and the bare name matches), which breaks
     # browser-driven tests against http://app:8080 with ERR_SSL_PROTOCOL_ERROR.

@@ -5,9 +5,20 @@
          graphs into packages.lock.json, so the locked-mode restore in the
          Dockerfile works on x64 and arm64 build hosts alike. -->
     <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <!-- Emit the OpenAPI document at build time to openapi.json beside this
+         project. The committed copy is the API contract: the client's
+         src/api-types.d.ts is generated from it (npm run generate:api-types)
+         and verify.sh's contract check regenerates both and fails on drift,
+         so the server's records and the client's types cannot silently
+         diverge. -->
+    <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
