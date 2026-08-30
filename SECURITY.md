@@ -37,6 +37,9 @@ Projects generated from this template ship with:
 
 GitHub does not inherit repo-level settings from templates (secret scanning +
 push protection, private vulnerability reporting, Dependabot alerts and
-security updates, branch protection requiring the `verify` and CodeQL
-checks). Running [`./scripts/setup.sh`](scripts/setup.sh) once on a generated
-repository enables all of them.
+security updates, branch protection requiring every PR-gating check —
+`verify`, dependency review, CodeQL, trivy and ZAP). Running
+[`./scripts/setup.sh`](scripts/setup.sh) once on a generated repository
+enables all of them; `scripts/check-required-contexts.sh` (part of `make
+verify`) fails the suite if that required list and the workflows ever drift
+apart.

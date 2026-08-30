@@ -5,6 +5,26 @@ using OpenTelemetry.Trace;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Net.Http.Headers;
 
+// Healthcheck mode: the chiseled runtime image has no shell or curl, so the
+// container healthcheck (Dockerfile HEALTHCHECK, honored by compose) re-runs
+// this binary with --healthcheck, which probes the serving process's /healthz
+// and exits 0 (healthy) or 1. The port comes from the same variable the
+// server listens on (the aspnet base image sets ASPNETCORE_HTTP_PORTS=8080).
+if (args.Contains("--healthcheck"))
+{
+    var port = Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")?.Split(';')[0] ?? "8080";
+    using var healthClient = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+    try
+    {
+        using var healthResponse = await healthClient.GetAsync(new Uri($"http://localhost:{port}/healthz")).ConfigureAwait(false);
+        return healthResponse.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+        return 1;
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
@@ -138,7 +158,11 @@ app.MapGet("/api/hello", () => Results.Ok(new Greeting("Hello from the API")));
 // same shell with the root div left empty.
 app.MapFallbackToFile("spa.html", staticFiles);
 
-app.Run();
+// RunAsync, not Run: the --healthcheck branch above makes the entry point
+// async, and CA1849 rightly refuses a synchronous block inside it.
+await app.RunAsync().ConfigureAwait(false);
+
+return 0;
 
 internal sealed record Greeting(string Message);
 

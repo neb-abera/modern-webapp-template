@@ -10,8 +10,9 @@
 #   2. enables the GitHub security settings templates cannot carry over:
 #      secret scanning, push protection, private vulnerability reporting,
 #      Dependabot alerts and security updates
-#   3. enables branch protection on the default branch requiring the CI
-#      (`verify`) and CodeQL checks
+#   3. enables branch protection on the default branch requiring every check
+#      that gates a PR: the CI (`verify`) suite, dependency review, CodeQL,
+#      the trivy container scan and the ZAP baseline scan
 #
 # Requirements: git, and the GitHub CLI (`gh`, https://cli.github.com)
 # authenticated as an admin of the repository. Safe to re-run: every step is
@@ -94,7 +95,13 @@ gh api -X PUT "repos/$owner_repo/vulnerability-alerts" > /dev/null
 done_ "Dependabot alerts"
 
 #
-# 3. Branch protection requiring the CI and CodeQL checks
+# 3. Branch protection requiring every PR-gating check
+#
+# The contexts are the `name:` of every job that runs on pull_request in
+# ci.yml, codeql.yml and security-scan.yml. If a job is missing here, a red
+# run of it does not block a merge — Dependabot auto-merge would land the PR
+# anyway. scripts/check-required-contexts.sh (run by verify.sh) fails when
+# this list and the workflows drift apart.
 #
 
 step "Enabling branch protection on $default_branch"
@@ -102,7 +109,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["verify", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)"]
+    "contexts": ["verify", "dependency review", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)", "container scan (trivy)", "dast (ZAP baseline)"]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": null,
@@ -111,7 +118,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
   "allow_deletions": false
 }
 JSON
-done_ "verify + CodeQL checks required, strict, enforced for admins"
+done_ "verify + dependency review + CodeQL + trivy + ZAP checks required, strict, enforced for admins"
 
 #
 # 4. Commit signing — verified commits, out of the box

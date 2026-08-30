@@ -9,6 +9,11 @@
 # arms every PR, so a major merges itself when CI is green and stays open —
 # red — when it genuinely conflicts. Open red PRs are the human queue.
 #
+# Every ecosystem waits out a 5-day cooldown before taking a new release:
+# most supply-chain attacks on registries are caught and yanked within days,
+# so auto-merging a release published hours ago is the riskiest moment to
+# take it. Security updates ignore the cooldown and arrive immediately.
+#
 # Not covered by Dependabot: <TargetFramework> in server/Directory.Build.props
 # and the cross-major jumps it gates — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) covers those.
@@ -18,6 +23,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       actions-minor-patch:
         update-types: [minor, patch]
@@ -26,6 +33,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
@@ -36,6 +45,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       compose-minor-patch:
         update-types: [minor, patch]
@@ -44,6 +55,8 @@ updates:
     directory: /server
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       nuget-minor-patch:
         update-types: [minor, patch]
@@ -52,6 +65,8 @@ updates:
     directory: /client
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
@@ -60,6 +75,8 @@ updates:
     directory: /e2e
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 5
     groups:
       e2e-minor-patch:
         update-types: [minor, patch]
