@@ -55,6 +55,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:0839314d08bb65da
 WORKDIR /app
 COPY --from=server-build /out ./
 COPY --from=client-build /build/client/dist ./wwwroot
+# The chiseled base already defaults to its non-root user (uid 1654, exported
+# as APP_UID), but only implicitly. Declare it, so the claim survives a base
+# image change — and verify.sh's smoke check asserts the built image's
+# Config.User is a non-zero numeric uid, which fails if this ever reverts.
+USER $APP_UID
 EXPOSE 8080
 # Chiseled images carry no shell or curl, so the healthcheck re-enters the
 # app binary in --healthcheck mode (see Program.cs), which probes /healthz.

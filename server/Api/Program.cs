@@ -27,6 +27,14 @@ if (args.Contains("--healthcheck"))
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Graceful shutdown: on redeploy the container gets SIGTERM, and Docker
+// waits only stop_grace_period (default 10s, pinned in compose.yaml) before
+// SIGKILL — while the host's default shutdown timeout is 30s. Left alone,
+// the runtime is still draining in-flight requests when the kill arrives.
+// 8s finishes inside Docker's 10s window (and well inside Azure Container
+// Apps' 30s terminationGracePeriodSeconds) with margin for process exit.
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(8));
+
 builder.Services.AddProblemDetails();
 
 // Observability: traces and metrics for every request and outgoing call.
@@ -150,7 +158,11 @@ if (app.Environment.IsDevelopment())
 
 app.MapHealthChecks("/healthz");
 
-app.MapGet("/api/hello", () => Results.Ok(new Greeting("Hello from the API")));
+// TypedResults, not Results: the typed return value is what puts Greeting's
+// schema into the OpenAPI document that the build emits (openapi.json) and
+// the client's generated types are made from — an untyped Results.Ok would
+// leave the contract empty and the drift gate blind.
+app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API")));
 
 // spa.html, not index.html: index.html carries the home page's prerendered
 // markup, and a client-rendered route served over it would flash the wrong

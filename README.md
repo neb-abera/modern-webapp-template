@@ -20,12 +20,22 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a Playwright end-to-end suite that runs against the *production image*,
   not a dev server,
 
-* **One verification suite everywhere** — `make verify` runs seven checks
+* **One verification suite everywhere** — `make verify` runs eight checks
   with a running pass/fail tally: a drift guard proving branch protection
-  requires every PR-gating check, server build+tests (warnings as errors),
-  client typecheck+lint+tests, production image build, container smoke test,
-  e2e, and a mutation canary proving the tests catch planted bugs. CI runs
-  exactly the same script, so green locally means green in CI,
+  requires every PR-gating check, server build+tests with a line-coverage
+  gate (warnings as errors), client typecheck+lint+tests with coverage
+  thresholds, an OpenAPI contract check proving the committed spec and the
+  generated client types match the code, production image build, container
+  smoke test (which also asserts the image runs as a non-root uid), e2e, and
+  a mutation canary proving the tests catch planted bugs. CI runs exactly
+  the same script, so green locally means green in CI,
+
+* **A mechanized API contract** — the server emits its OpenAPI document at
+  build time (`server/Api/openapi.json`), the client's response types are
+  generated from it (`client/src/api-types.d.ts`, `npm run
+  generate:api-types`), and the verify suite regenerates both and fails on
+  any drift — a hand-written client type that silently diverges from the
+  server cannot exist here,
 
 * **Observability by default** — OpenTelemetry traces and metrics on every
   request, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and

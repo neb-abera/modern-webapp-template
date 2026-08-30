@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
+import type { paths } from "./api-types";
 
-type Greeting = {
-  message: string;
-};
+// The API contract, not a hand-written mirror of it: api-types.d.ts is
+// generated (npm run generate:api-types) from the OpenAPI document the
+// server emits at build time, and verify.sh regenerates both and fails on
+// drift. If the server's Greeting record changes shape, this type changes
+// with it and the compiler flags every stale usage.
+export type Greeting =
+  paths["/api/hello"]["get"]["responses"]["200"]["content"]["application/json"];
 
 export function App() {
   const [greeting, setGreeting] = useState<string>();
