@@ -54,13 +54,36 @@ admin of the repo.
   Without the secrets the purge job warns and skips; with the cache rule but
   no purge, deploys serve stale pages for up to the rule's TTL.
 
-## 4. .NET major upgrades — close and reopen the PR
+## 4. Commit signing — one script per machine
+
+`setup.sh` configures signing automatically: `scripts/setup-signing.sh`
+creates a dedicated signing key if the machine has none, configures the
+repository to sign every commit, registers the key with GitHub, and only
+then does setup enable **require signed commits** on the default branch —
+if any of that fails (usually a `gh` token missing the
+`admin:ssh_signing_key` scope), setup degrades gracefully: signatures are
+not required, and it prints the two commands that enable them later.
+
+What stays manual, forever:
+
+- **Each new machine you commit from** runs `./scripts/setup-signing.sh`
+  once. Until it does, that machine's pushes to the protected branch are
+  rejected as unsigned — that rejection *is* the reminder.
+- **Never delete the signing key from GitHub** (Settings → SSH and GPG
+  keys). A lost machine needs no ceremony — run the script on its
+  replacement — but removing the public key retroactively flips every
+  commit it verified back to Unverified.
+- Bot commits are already handled: the `dotnet-major-upgrade` workflow
+  commits through GitHub's API (`sign-commits: true`), which GitHub signs
+  itself, and Dependabot's commits are GitHub-signed natively.
+
+## 5. .NET major upgrades — close and reopen the PR
 
 The monthly `dotnet-major-upgrade` workflow opens its PR with the default
 token, and workflow-opened PRs do not start checks on their own. Close and
 reopen that PR once to trigger CI on it; merge on green.
 
-## 5. Prerendering — keep the route list honest
+## 6. Prerendering — keep the route list honest
 
 `client/src/prerenderedRoutes.ts` lists the routes baked to HTML at build
 time. When you add a page whose content is the same for every visitor
