@@ -4,6 +4,9 @@ on:
   # Unfiltered pull_request: a PR stacked on a feature branch still gets
   # scanned (see ci.yml).
   pull_request:
+  # Required checks must also run on queued merge groups if a merge queue is
+  # ever enabled (see ci.yml). Harmless while no queue exists.
+  merge_group:
   push:
     branches: [main, master]
   schedule:
@@ -21,6 +24,7 @@ jobs:
   analyze:
     name: analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
@@ -45,6 +49,9 @@ jobs:
             uploads.github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job never pushes; don't persist the token.
+          persist-credentials: false
 
       - name: initialize CodeQL
         uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8

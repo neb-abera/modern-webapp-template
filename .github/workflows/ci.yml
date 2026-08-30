@@ -5,6 +5,10 @@ on:
   # means a PR stacked on another feature branch gets no checks at all — the
   # change most likely to go wrong is the one nothing verifies.
   pull_request:
+  # If a merge queue is ever enabled it replaces the strict up-to-date rule,
+  # and required checks must run on the queued merge group or every merge
+  # waits forever (or proceeds ungated). Harmless while no queue exists.
+  merge_group:
   push:
     branches: [main, master]
 
@@ -21,6 +25,9 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
+    # The full suite (build, tests, image, e2e) normally finishes well inside
+    # this; a hung container should not hold the runner for six hours.
+    timeout-minutes: 30
 
     steps:
       - name: harden runner
@@ -32,6 +39,10 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job never pushes; don't leave the token on disk for every
+          # later step and child process to read.
+          persist-credentials: false
 
       - name: set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -62,34 +73,24 @@ jobs:
     name: dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: block
+          # Only what this job actually dials: checkout (github.com) and the
+          # dependency-review API calls. No package registries — the job reads
+          # the dependency graph diff, it never restores a package.
           allowed-endpoints: >
             github.com:443
             api.github.com:443
-            codeload.github.com:443
-            raw.githubusercontent.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
-            uploads.github.com:443
             api.deps.dev:443
             api.securityscorecards.dev:443
-            auth.docker.io:443
-            registry-1.docker.io:443
-            production.cloudflare.docker.com:443
-            index.docker.io:443
-            mcr.microsoft.com:443
-            *.data.mcr.microsoft.com:443
-            api.nuget.org:443
-            globalcdn.nuget.org:443
-            registry.npmjs.org:443
-            ghcr.io:443
-            pkg-containers.githubusercontent.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -105,3 +106,53 @@ jobs:
             LGPL-2.0-only, LGPL-2.0-or-later,
             LGPL-2.1-only, LGPL-2.1-or-later,
             LGPL-3.0-only, LGPL-3.0-or-later
+
+  # Lint the linters: the workflows and shell scripts every other gate is
+  # built out of get no checks from the app toolchain, so a typo'd `if:`
+  # or an unquoted variable in verify.sh fails silently until it matters.
+  # actionlint validates the workflow files (delegating embedded run: blocks
+  # to shellcheck); shellcheck covers scripts/*.sh. Both binaries are
+  # version- and checksum-pinned so this job runs exactly what was reviewed.
+  lint:
+    name: lint (actionlint + shellcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          # checkout dials github.com; the two release tarballs redirect to
+          # the githubusercontent asset hosts.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: install pinned actionlint and shellcheck
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          SHELLCHECK_VERSION: 0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSLo actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          curl -fsSLo shellcheck.tar.xz \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf shellcheck.tar.xz --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+
+      - name: actionlint (workflows, including embedded shell)
+        run: '"$RUNNER_TEMP/actionlint" -color -shellcheck "$RUNNER_TEMP/shellcheck"'
+
+      - name: shellcheck (scripts/*.sh)
+        run: '"$RUNNER_TEMP/shellcheck" scripts/*.sh'
