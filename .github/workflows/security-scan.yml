@@ -38,7 +38,7 @@ jobs:
         run: docker build -t scan-target .
 
       - name: scan for HIGH/CRITICAL CVEs
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: scan-target
           severity: HIGH,CRITICAL
@@ -51,7 +51,7 @@ jobs:
 
       - name: upload findings to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: trivy.sarif
 
