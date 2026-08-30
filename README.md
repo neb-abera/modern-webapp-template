@@ -26,6 +26,11 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a mutation canary proving the tests catch planted bugs. CI runs exactly
   the same script, so green locally means green in CI,
 
+* **Observability by default** — OpenTelemetry traces and metrics on every
+  request, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and
+  silent otherwise; ReadyToRun publishing for cold starts and a k6 load
+  harness (`make load`) round out [docs/performance.md](docs/performance.md),
+
 * **Delivery performance by default** — responses are compressed, Vite's
   content-hashed assets are served `immutable` while the document stays
   `no-cache`, and the e2e suite pins all of it, because an uncompressed
