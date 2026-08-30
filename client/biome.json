@@ -6,7 +6,13 @@
     "useIgnoreFile": false
   },
   "files": {
-    "includes": ["**", "!**/dist", "!src/api-types.d.ts"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!src/api-types.d.ts",
+      "!**/coverage",
+      "!**/*.tsbuildinfo"
+    ]
   },
   "formatter": {
     "enabled": true,
