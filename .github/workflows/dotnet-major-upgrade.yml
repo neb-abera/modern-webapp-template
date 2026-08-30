@@ -21,11 +21,17 @@ permissions: {}
 jobs:
   upgrade:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # create-pull-request configures its own auth from its token input
+          # (and commits via the API under sign-commits); it never uses the
+          # checkout's persisted credential, so don't leave one on disk.
+          persist-credentials: false
 
       - name: Check for a newer GA .NET major
         id: check
