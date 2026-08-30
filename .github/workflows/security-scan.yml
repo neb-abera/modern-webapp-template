@@ -18,7 +18,8 @@ concurrency:
 permissions:
   contents: read
 
-jobs:  image-scan:
+jobs:
+  image-scan:
     name: container scan (trivy)
     runs-on: ubuntu-latest
     permissions:
@@ -29,7 +30,7 @@ jobs:  image-scan:
       - name: harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-# Audit, not block: this job builds/runs containers, and container-side
+          # Audit, not block: this job builds/runs containers, and container-side
           # DNS bypasses harden-runner's resolver, so blocked lookups surface as
           # refused raw-IP dials. Host-process jobs stay on block.
           egress-policy: audit
@@ -65,7 +66,7 @@ jobs:  image-scan:
       - name: harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
-# Audit, not block: this job builds/runs containers, and container-side
+          # Audit, not block: this job builds/runs containers, and container-side
           # DNS bypasses harden-runner's resolver, so blocked lookups surface as
           # refused raw-IP dials. Host-process jobs stay on block.
           egress-policy: audit
