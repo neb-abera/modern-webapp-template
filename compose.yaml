@@ -1,11 +1,24 @@
 services:
   # Production-like: the runtime image serving API + built client together.
+  # Health comes from the image's HEALTHCHECK (see the Dockerfile): the
+  # chiseled runtime has no shell, so a compose-level `test:` command could
+  # not run inside it — the image's dotnet self-probe is the one mechanism
+  # that works, and compose inherits it for service_healthy / --wait.
   app:
     build:
       context: .
       target: runtime
     ports:
       - "8080:8080"
+    # Chromium hard-upgrades any host named `app` to HTTPS (the entire .app
+    # TLD is HSTS-preloaded, and the bare name matches), which breaks
+    # browser-driven tests against http://app:8080 with ERR_SSL_PROTOCOL_ERROR.
+    # `make e2e` targets this alias instead; non-browser clients (k6) can
+    # keep using the service name.
+    networks:
+      default:
+        aliases:
+          - app-under-test
 
   # Development profile (`docker compose --profile dev up`): hot-reloading
   # server and client in separate containers.
@@ -50,8 +63,12 @@ services:
     environment:
       BASE_URL: http://app:8080
     command: run /scripts/smoke.js
+    # Wait for the app to be healthy, not merely started: k6 hitting a
+    # container that hasn't bound its port yet reports connection errors
+    # as if they were findings.
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
   # Need a database? Uncomment and add a connection string to the server.
   # db:

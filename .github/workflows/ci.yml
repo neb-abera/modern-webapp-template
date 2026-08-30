@@ -94,3 +94,14 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # Copyleft licenses a new dependency must not bring into this
+          # Apache-2.0 project. SPDX identifiers, comma-separated; the
+          # -only and -or-later variants are distinct identifiers, so both
+          # are listed.
+          deny-licenses: >-
+            AGPL-3.0-only, AGPL-3.0-or-later,
+            GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            LGPL-2.0-only, LGPL-2.0-or-later,
+            LGPL-2.1-only, LGPL-2.1-or-later,
+            LGPL-3.0-only, LGPL-3.0-or-later

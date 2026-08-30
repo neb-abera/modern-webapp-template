@@ -1,4 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <!-- The production image publishes ReadyToRun, which restores for a
+         specific runtime. Declaring both Linux RIDs bakes their runtime
+         graphs into packages.lock.json, so the locked-mode restore in the
+         Dockerfile works on x64 and arm64 build hosts alike. -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
