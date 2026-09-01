@@ -1,3 +1,8 @@
+# No `name:` on purpose. Compose falls back to the directory, and a worktree or
+# a second clone already has a directory of its own, so two copies of this
+# repository never share container names or volumes. Published ports cannot be
+# derived that way — compose only reads numbers — so scripts/worktree-env.sh
+# writes them to .env, which compose loads on every invocation.
 services:
   # Production-like: the runtime image serving API + built client together.
   # Health comes from the image's HEALTHCHECK (see the Dockerfile): the
@@ -9,7 +14,7 @@ services:
       context: .
       target: runtime
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
     # SIGTERM -> SIGKILL window on stop and redeploy. This is Docker's
     # default, written down because the app depends on it: the server's
     # shutdown timeout is 8s (HostOptions in Program.cs, pinned by a test)
@@ -40,7 +45,7 @@ services:
     volumes:
       - ./server:/work/server
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
 
   client:
     profiles: [dev]
@@ -54,7 +59,7 @@ services:
     volumes:
       - ./client:/work/client
     ports:
-      - "5173:5173"
+      - "${CLIENT_PORT:-5173}:5173"
     depends_on:
       - server
 
@@ -82,7 +87,7 @@ services:
   #   environment:
   #     POSTGRES_PASSWORD: dev-only-password
   #   ports:
-  #     - "5432:5432"
+  #     - "${DB_PORT:-5432}:5432"
   #   volumes:
   #     - pgdata:/var/lib/postgresql/data
   #   healthcheck:
