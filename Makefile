@@ -1,4 +1,4 @@
-.PHONY: run dev shell verify test-server test-client e2e clean help load
+.PHONY: run dev ports shell verify test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -16,13 +16,34 @@ export PRINT_HELP_PYSCRIPT
 # projects generated from this template need no edits here.
 IMAGE := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
 
+# Published ports do too, by way of .env — compose only reads numbers, so they
+# cannot come from the directory the way the image name does. Two worktrees of
+# one repository otherwise fight over 8080, and the copy that loses is the one
+# whose owner then browses the other's build believing it to be theirs.
+# Generated at parse time so the include has something to read; an existing
+# .env is left alone, so `APP_PORT=9001 make run` and a hand-edited file both
+# still work.
+$(shell ./scripts/worktree-env.sh)
+-include .env
+APP_PORT    ?= 8080
+CLIENT_PORT ?= 5173
+export APP_PORT
+export CLIENT_PORT
+
 help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-run: ## run the production image (client + API in one container) on :8080
+ports: ## show this copy's host ports and image name
+	@printf 'app     http://localhost:%s   (make run)\n' '$(APP_PORT)'
+	@printf 'client  http://localhost:%s   (make dev)\n' '$(CLIENT_PORT)'
+	@printf 'image   %s\n' '$(IMAGE)'
+
+run: ## run the production image (client + API in one container); `make ports` says where
+	@printf 'this copy serves on http://localhost:%s\n' '$(APP_PORT)'
 	docker compose up --build app
 
-dev: ## hot-reloading development servers (client :5173, API :8080)
+dev: ## hot-reloading development servers; `make ports` says where
+	@printf 'this copy serves client on :%s, API on :%s\n' '$(CLIENT_PORT)' '$(APP_PORT)'
 	docker compose --profile dev up --build
 
 shell: ## open a development shell inside the toolchain image
