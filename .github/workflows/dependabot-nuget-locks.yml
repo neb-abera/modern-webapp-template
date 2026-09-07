@@ -1,0 +1,117 @@
+name: Dependabot NuGet lock files
+# Regenerates every packages.lock.json on a Dependabot NuGet PR and commits
+# the result to the PR, so the update can restore in locked mode.
+#
+# Why it exists: Dependabot rewrites the lock file of the project whose
+# package it bumped, and sometimes the lock file of a project that
+# references it, but not consistently and not for projects affected only
+# through a ProjectReference (dependabot-core#13950, open). The dependent
+# project's lock file then still pins the old version through the project
+# reference, RestoreLockedMode fails with NU1004, and the PR sits red until
+# somebody regenerates the lock files by hand. This job is that hand.
+#
+# How: on Dependabot's own event, restore every project with the
+# force-evaluate switch in the same sdk image the Dockerfile builds with,
+# and if any lock file moved, commit the moved files to the PR branch
+# through the GraphQL API with the Dependabot auto-merge token. Two things
+# follow from committing that way rather than with git push:
+#  - the commit is signed by GitHub, so the ruleset's signature requirement
+#    is met, and
+#  - it is a PAT, not GITHUB_TOKEN, so the push fires the PR's checks again;
+#    a GITHUB_TOKEN push would leave the new head with no checks and
+#    auto-merge waiting forever.
+# The re-fired run has the PAT's owner as actor, not Dependabot, so the
+# actor gate below stops it from running this job again: no loop.
+#
+# Same namespace rule as the auto-merge workflow: the token must be stored
+# under Settings, Secrets and variables, Dependabot, or a Dependabot-triggered
+# run cannot see it.
+on: pull_request
+
+permissions: {}
+
+env:
+  # The Dockerfile whose sdk FROM line names the image to restore with, and
+  # the projects whose restore covers every lock file in the repository
+  # (their project references pull the rest in).
+  DOCKERFILE: Dockerfile
+  PROJECTS: server/Api/Api.csproj server/Api.Tests/Api.Tests.csproj
+  # Whatever the Dockerfile's own restore passes, so the lock files match
+  # what the image build will ask for.
+  RESTORE_ARGS: ""
+
+jobs:
+  regenerate:
+    name: regenerate lock files
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor == 'dependabot[bot]'
+      && startsWith(github.event.pull_request.head.ref, 'dependabot/nuget/')
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Audit, not block: this job runs a container, and container-side
+          # DNS bypasses harden-runner's resolver.
+          egress-policy: audit
+
+      - name: Checkout the PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Regenerate the lock files in the Dockerfile's sdk image
+        run: |
+          set -euo pipefail
+          image="$(sed -n 's/^FROM \(mcr\.microsoft\.com\/dotnet\/sdk:[^ ]*\).*/\1/p' "$DOCKERFILE" | head -1)"
+          [ -n "$image" ] || { echo "::error::no dotnet/sdk FROM line in $DOCKERFILE"; exit 1; }
+          echo "restoring with $image"
+          for project in $PROJECTS; do
+            # shellcheck disable=SC2086 # RESTORE_ARGS is a list of switches; splitting is the point
+            docker run --rm -v "$PWD:/src" -w /src "$image" \
+              dotnet restore "$project" $RESTORE_ARGS --force-evaluate
+          done
+          # The container ran as root; give the files back so git can read them.
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Commit the lock files that moved, signed, through the API
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain -- '*packages.lock.json' | awk '{print $2}')"
+          if [ -z "$changed" ]; then
+            echo "Every lock file already agrees with the update; nothing to commit."
+            exit 0
+          fi
+          echo "Lock files that moved:"
+          echo "$changed"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::DEPENDABOT_AUTOMERGE_TOKEN is empty, so the regenerated lock files cannot be committed. Store it as a Dependabot secret (Settings, Secrets and variables, Dependabot) with contents:write; an Actions secret of the same name is invisible to a Dependabot-triggered run."
+            exit 1
+          fi
+          additions="$(for f in $changed; do
+            jq -n --arg path "$f" --arg contents "$(base64 < "$f" | tr -d '\n')" '{path: $path, contents: $contents}'
+          done | jq -s .)"
+          jq -n \
+            --arg repo "$REPO" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
+            --argjson additions "$additions" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }",
+              variables: { input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                expectedHeadOid: $head,
+                message: {
+                  headline: "Regenerate NuGet lock files for this update",
+                  body: "Dependabot rewrites the lock file of the project it bumped but not every project that inherits the package through a project reference (dependabot-core#13950). Restored every project with force-evaluate in the Dockerfile sdk image; these are the lock files that moved."
+                },
+                fileChanges: { additions: $additions }
+              } }
+            }' > /tmp/commit.json
+          gh api graphql --input /tmp/commit.json --jq '.data.createCommitOnBranch.commit.url'
