@@ -102,15 +102,23 @@ Docker, gated by a test-driven verification suite, and secured by default.
 Generate a repository from this template on GitHub, clone it, then:
 
 ```bash
-make dev        # hot-reloading dev servers: client on :5173, API on :8080
+make ports      # which host ports this copy of the repository uses
+make dev        # hot-reloading dev servers
 ```
+
+`make ports` first, because the answer differs per copy. Container names come
+from the checkout directory and the published ports from a `.env` derived from
+it, so two worktrees — or two clones — run side by side instead of fighting over
+8080, and `make clean` only takes down the one you are standing in. The main
+checkout keeps :5173 and :8080. Override for one run with `APP_PORT=9001 make
+run`, or edit the `.env` the first `make` writes.
 
 ```bash
 make verify     # the full verification suite (what CI runs)
 ```
 
 ```bash
-make run        # the production image on :8080
+make run        # the production image; `make ports` says where
 ```
 
 `make help` lists everything else (`shell`, `test-server`, `test-client`,

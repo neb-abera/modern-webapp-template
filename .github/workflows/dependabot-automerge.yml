@@ -9,9 +9,19 @@ name: Dependabot auto-merge
 #
 # Needs two things an adopting repository must set up once:
 #  - the "Allow auto-merge" setting enabled on the repository, and
-#  - a DEPENDABOT_AUTOMERGE_TOKEN secret: a fine-grained PAT with
-#    contents:write and pull-requests:write on the repository.
-# Until both exist, the workflow warns and does nothing.
+#  - a DEPENDABOT_AUTOMERGE_TOKEN secret — a fine-grained PAT with
+#    contents:write and pull-requests:write on the repository — stored under
+#    Settings, Secrets and variables, DEPENDABOT. Not under Actions.
+#
+# The namespace is the whole trick, and it is easy to get wrong because the
+# two lists look identical in the UI. A workflow Dependabot triggers is handed
+# the Dependabot secret store; Actions secrets are absent, so
+# secrets.DEPENDABOT_AUTOMERGE_TOKEN reads empty however correct the Actions
+# copy is. Moving the trigger to pull_request_target does not rescue it: when
+# the base ref was created by Dependabot the token is read-only and secrets
+# are still unavailable. A token that other actors' workflows also need must
+# be stored under both namespaces, under the same name.
+# https://docs.github.com/en/code-security/reference/supply-chain-security/troubleshoot-dependabot/dependabot-on-actions
 #
 # A PAT rather than GITHUB_TOKEN, on purpose: a merge performed via
 # GITHUB_TOKEN does not trigger workflows, so pushes to the default branch
@@ -32,8 +42,14 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
         run: |
+          # Fail, rather than warn and pass. This step warned and exited 0
+          # until 2026-09-07, so a repository whose token sat in the wrong
+          # namespace showed a green Dependabot auto-merge job on every PR
+          # while arming nothing. Three repositories quietly stopped taking
+          # dependency updates for a week that way, which is precisely the
+          # advisory-check failure this project treats as a design defect.
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::DEPENDABOT_AUTOMERGE_TOKEN not set; not arming auto-merge. Merge this PR by hand, or add the secret (fine-grained PAT, contents:write + pull-requests:write on this repo) and enable the repository's Allow auto-merge setting."
-            exit 0
+            echo "::error::DEPENDABOT_AUTOMERGE_TOKEN is empty: auto-merge was NOT armed and this PR will sit open until a human merges it. Store the token as a DEPENDABOT secret (Settings, Secrets and variables, Dependabot) — an Actions secret of the same name is invisible to a Dependabot-triggered run. It needs contents:write and pull-requests:write on this repository, and the repository's Allow auto-merge setting must be on."
+            exit 1
           fi
           gh pr merge --auto --merge "$PR_URL"
