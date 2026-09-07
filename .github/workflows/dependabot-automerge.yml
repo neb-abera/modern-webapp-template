@@ -35,7 +35,17 @@ jobs:
   automerge:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # The PR must be Dependabot's, and so must the event. A human pushing to
+    # a Dependabot branch (the Update branch button, a merge of the default
+    # branch into it) fires pull_request with the human as actor, and that
+    # run is handed the Actions secret store, where this token is not and
+    # need not be: the job failed on an empty token and painted every such
+    # PR red for nothing. Dependabot's own events are what arm auto-merge,
+    # and an armed PR stays armed across later human pushes, so a human's
+    # event has nothing to do here and skips.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor == 'dependabot[bot]'
     steps:
       - name: Arm auto-merge
         env:
