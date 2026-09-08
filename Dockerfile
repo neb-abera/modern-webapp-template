@@ -26,7 +26,7 @@ RUN npm run build
 # tags but never the TargetFramework — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) makes the cross-major jump.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS server-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510 AS server-build
 WORKDIR /build/server
 COPY server/ ./
 # ReadyToRun precompiles IL for faster cold starts (Container Apps scale
@@ -39,7 +39,7 @@ RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true -
 # node-base above rather than a package repository, so the dev toolchain can
 # never drift from the version the client is built with.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS dev
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510 AS dev
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
