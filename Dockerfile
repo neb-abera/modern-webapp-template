@@ -51,7 +51,7 @@ WORKDIR /work
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:0839314d08bb65da369135389a5d8291f75ace587fbb0488f469eb92c62eef68 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02 AS runtime
 WORKDIR /app
 COPY --from=server-build /out ./
 COPY --from=client-build /build/client/dist ./wwwroot
