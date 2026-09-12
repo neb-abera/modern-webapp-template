@@ -14,6 +14,9 @@
 # so auto-merging a release published hours ago is the riskiest moment to
 # take it. Security updates ignore the cooldown and arrive immediately.
 #
+# Packages that must move together are grouped at every update level, majors
+# included, or a major arrives as two PRs that each fail to install.
+#
 # Not covered by Dependabot: <TargetFramework> in server/Directory.Build.props
 # and the cross-major jumps it gates — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) covers those.
@@ -68,6 +71,14 @@ updates:
     cooldown:
       default-days: 5
     groups:
+      # vitest and @vitest/* peer-depend on each other's exact version, so a
+      # major split across two PRs cannot install in either (vitest 5, 2026-09:
+      # #45 and #46 each failed npm ci and sat red). First match wins, so this
+      # catches the pair before the minor-patch group does.
+      vitest:
+        patterns:
+          - vitest
+          - "@vitest/*"
       npm-minor-patch:
         update-types: [minor, patch]
 
