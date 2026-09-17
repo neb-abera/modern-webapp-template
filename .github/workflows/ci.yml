@@ -129,7 +129,7 @@ jobs:
   # built out of get no checks from the app toolchain, so a typo'd `if:`
   # or an unquoted variable in verify.sh fails silently until it matters.
   # actionlint validates the workflow files (delegating embedded run: blocks
-  # to shellcheck); shellcheck covers scripts/*.sh. Both binaries are
+  # to shellcheck); shellcheck covers scripts/*.sh and scripts/db/*.sh. Both binaries are
   # version- and checksum-pinned so this job runs exactly what was reviewed.
   lint:
     name: lint (actionlint + shellcheck)
@@ -172,5 +172,5 @@ jobs:
       - name: actionlint (workflows, including embedded shell)
         run: '"$RUNNER_TEMP/actionlint" -color -shellcheck "$RUNNER_TEMP/shellcheck"'
 
-      - name: shellcheck (scripts/*.sh)
-        run: '"$RUNNER_TEMP/shellcheck" scripts/*.sh'
+      - name: shellcheck (scripts/*.sh, scripts/db/*.sh)
+        run: '"$RUNNER_TEMP/shellcheck" scripts/*.sh scripts/db/*.sh'
