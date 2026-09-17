@@ -216,6 +216,10 @@ banner "OpenAPI contract: committed spec and generated client types match the co
 # fail on any difference, so the server's records and the client's types
 # cannot silently diverge. Same pattern as any generated-file gate: the
 # committed artifact must be reproducible from source.
+#
+# openapi-typescript is not in the client manifest: it lives in
+# tools/api-types with a TypeScript 5 of its own (that package.json says
+# why), so this installs that tree, not the client's.
 CONTRACT_OUT="$(mktemp -d)"
 if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/root/.nuget" "$SDK_IMAGE" bash -c '
     set -e
@@ -227,18 +231,17 @@ if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/ro
    && docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-npm:/npm-cache" \
         -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
     set -e
-    cp -r /src/client /w
+    cp -r /src/tools/api-types /w
     cd /w
     npm ci --no-audit --no-fund
-    npx openapi-typescript /out/openapi.json --output /out/api-types.d.ts
+    node_modules/.bin/openapi-typescript /out/openapi.json --output /out/api-types.d.ts
   ' >> "$LOG" 2>&1 \
    && diff -u server/Api/openapi.json "$CONTRACT_OUT/openapi.json" \
    && diff -u client/src/api-types.d.ts "$CONTRACT_OUT/api-types.d.ts"; then
   pass "openapi.json and api-types.d.ts are exactly what the code generates"
 else
   tail -25 "$LOG"
-  echo "regenerate with: a server build (emits server/Api/openapi.json)," >&2
-  echo "then 'npm run generate:api-types' in client/, and commit both" >&2
+  echo "regenerate with 'make contract' and commit both files" >&2
   fail "OpenAPI contract drift (spec or generated types are stale)"
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true

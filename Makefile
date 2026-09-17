@@ -1,4 +1,4 @@
-.PHONY: run dev ports shell verify test-server test-client e2e clean help load
+.PHONY: run dev ports shell contract verify test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -50,6 +50,9 @@ shell: ## open a development shell inside the toolchain image
 	docker build -t $(IMAGE)-dev:latest --target dev .
 	docker rm -f $(IMAGE)-dev 2>/dev/null || true
 	docker run --rm -it --name $(IMAGE)-dev -v $(CURDIR):/work -w /work $(IMAGE)-dev:latest bash
+
+contract: ## regenerate server/Api/openapi.json and client/src/api-types.d.ts from the code
+	docker compose run --rm --build contract
 
 load: ## run the k6 load harness against the production-like app
 	docker compose up -d --build --wait app
