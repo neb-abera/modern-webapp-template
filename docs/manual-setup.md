@@ -108,3 +108,41 @@ day you add a client-side router, wrap the app in its static router inside
 `client/src/entry-server.tsx` and the matching browser router in
 `client/src/main.tsx` — both entries must compose the same tree, because
 hydration compares the prerendered markup against it.
+
+## 7. The day you add sign-in
+
+The template has no users, but it is already closed: the fallback
+authorization policy requires an authenticated user on every endpoint that
+does not say `AllowAnonymous()`, a test
+(`EveryEndpointDeclaresWhoMayCallIt`) fails on an endpoint that says nothing,
+and 401/403 are already security events 1002/1003
+(`server/Api/AuthorizationRefusals.cs`). Adding a scheme changes none of
+that. What is left is judgment, so it is manual:
+
+- **Register the scheme; leave the policy alone.**
+
+  ```csharp
+  builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(...);
+  ```
+
+  `UseAuthentication` is added for you, ahead of the pipeline. Do not replace
+  the fallback policy with per-endpoint `[Authorize]`: opt-in authorization is
+  the defect this default exists to prevent.
+- **Every object read or written by id gets the IDOR test, before the
+  endpoint is written.** "User B is refused user A's object" is one line with
+  the helper in `server/Api.Tests/AuthorizationTests.cs`:
+
+  ```csharp
+  using var host = TestIdentity.Host(factory);
+  await TestIdentity.AssertOnlyTheOwnerCanRead(host, $"/api/notes/{alicesNoteId}", owner: "alice", someoneElse: "bob");
+  ```
+
+  It asserts 200 for the owner, **404** for another signed-in user (a 403
+  confirms the object exists) and 401 for nobody. The query that makes it
+  pass filters by owner in the database (`WHERE id = @id AND owner_id =
+  @user`), not after loading. `TestIdentity` signs a test user in with a
+  header and exists only in the test host.
+- **Call the named security events** (`server/Api/SecurityEvents.cs`,
+  table in [SECURITY.md](../SECURITY.md)): `SignInRefused` wherever a sign-in
+  attempt is turned away — with the enum reason, never the attempted user
+  name — and `AntiforgeryRejected` where antiforgery validation fails.

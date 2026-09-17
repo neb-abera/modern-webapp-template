@@ -2,6 +2,7 @@ using Api;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -122,6 +123,14 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions { PermitLimit = permitLimit, Window = TimeSpan.FromSeconds(10) }));
 });
 
+// Closed unless opened: an endpoint with no authorization metadata requires an
+// authenticated user. Every endpoint below says AllowAnonymous out loud, and a
+// test (EveryEndpointDeclaresWhoMayCallIt) fails on one that says nothing.
+// AuthorizationRefusals.cs is how this works before any sign-in exists.
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationRefusals>();
+
 var app = builder.Build();
 
 // First, before anything reads the connection: every later middleware — the
@@ -203,20 +212,25 @@ app.UseRouting();
 // a new endpoint is covered the moment it is mapped.
 app.UseRateLimiter();
 
+// Explicit, and after routing for the same reason: left implicit, WebApplication
+// adds it at the front, where no endpoint is known yet and the fallback policy
+// would turn every static file into a 401.
+app.UseAuthorization();
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 // Probes arrive on a schedule from one address; a limited health endpoint
 // turns a traffic spike into a restart.
-app.MapHealthChecks("/healthz").DisableRateLimiting();
+app.MapHealthChecks("/healthz").DisableRateLimiting().AllowAnonymous();
 
 // TypedResults, not Results: the typed return value is what puts Greeting's
 // schema into the OpenAPI document that the build emits (openapi.json) and
 // the client's generated types are made from — an untyped Results.Ok would
 // leave the contract empty and the drift gate blind.
-app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API")));
+app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API"))).AllowAnonymous();
 
 // spa.html, not index.html: index.html carries the home page's prerendered
 // markup, and a client-rendered route served over it would flash the wrong
@@ -224,7 +238,7 @@ app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API"
 // same shell with the root div left empty.
 // It is a static file that happens to be served by an endpoint, so it is
 // unlimited like the rest of them.
-app.MapFallbackToFile("spa.html", staticFiles).DisableRateLimiting();
+app.MapFallbackToFile("spa.html", staticFiles).DisableRateLimiting().AllowAnonymous();
 
 // RunAsync, not Run: the --healthcheck branch above makes the entry point
 // async, and CA1849 rightly refuses a synchronous block inside it.

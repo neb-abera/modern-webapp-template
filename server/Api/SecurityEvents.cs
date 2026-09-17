@@ -11,8 +11,9 @@
 // people than the database is. The parameters are typed so that the wrong
 // thing is awkward to pass.
 //
-// 1001 is raised by this template today. The rest are here so the code that
-// first needs them finds a name and a number waiting: the first sign-in
+// 1001-1003 are raised by this template today (the limiter, and
+// AuthorizationRefusals). The rest are here so the code that first needs them
+// finds a name and a number waiting: the first sign-in
 // endpoint calls SignInRefused, the first webhook calls
 // WebhookSignatureRejected, the first form post wires AntiforgeryRejected.
 // docs/manual-setup.md says where.
