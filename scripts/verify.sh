@@ -11,12 +11,15 @@
 #      (vitest.config's coverage.thresholds fail the run on their own)
 #   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   5. the production image builds
-#   6. smoke: the running container serves client, API, health, security
+#   5. response DTOs: no response schema in that spec has a field named like
+#      personal or secret data, unless allowlisted with a reason (the checker
+#      plants a leaking spec and must catch it)
+#   6. the production image builds
+#   7. smoke: the running container serves client, API, health, security
 #      headers, refuses a Host it was not configured for — and runs as a
 #      non-root user
-#   7. end-to-end: Playwright against the production container
-#   8. mutation canary: a planted server bug must fail the tests
+#   8. end-to-end: Playwright against the production container
+#   9. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -47,7 +50,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=8
+CHECKS_TOTAL=9
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -246,6 +249,13 @@ else
   fail "OpenAPI contract drift (spec or generated types are stale)"
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true
+
+banner "Response DTOs: no personal or secret fields leave the API unlisted"
+if ./scripts/check-response-pii.sh 2>&1 | tee "$LOG"; then
+  pass "Response schemas carry no unlisted PII-named fields (and the checker caught a planted one)"
+else
+  fail "Response DTO discipline (a PII-named response field, or the checker's self-test)"
+fi
 
 banner "Production image builds"
 # VERIFY_DOCKER_BUILD_ARGS lets CI pass layer-cache flags; it changes how
