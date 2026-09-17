@@ -30,6 +30,10 @@ Projects generated from this template ship with:
 * rate limiting on every endpoint, partitioned by the real client address
   behind trusted proxies (static files and `/healthz` are not counted), with
   each refusal logged as a security event (below),
+* authorization on by default: the fallback policy requires an authenticated
+  user on every endpoint that does not declare `AllowAnonymous`, a test
+  fails on an endpoint that declares nothing, and 401/403 are logged as
+  security events — all before any sign-in exists,
 * a settings file with deliberate values: only configured `Host` headers are
   answered, request bodies over 1 MB are refused, and authorization failures
   are not filtered out of the log,
@@ -75,7 +79,7 @@ that matched it or the query string; the **resolved client address**
 one. It never carries a header, cookie, body, token, email address or name —
 a test sends all of those and asserts none reaches the log.
 
-1001 fires in the template as shipped. 1002–1006 are named slots:
+1001–1003 fire in the template as shipped. 1004–1006 are named slots:
 the first code that signs a user in, accepts a webhook or posts a form calls
 the matching method ([docs/manual-setup.md](docs/manual-setup.md) says
 where), so the numbers are already stable when the first alert is written.
