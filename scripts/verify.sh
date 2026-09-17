@@ -11,11 +11,14 @@
 #      (vitest.config's coverage.thresholds fail the run on their own)
 #   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   5. the production image builds
-#   6. smoke: the running container serves client, API, health, security
+#   5. held majors: no dependency's next major is uninstallable, which is
+#      the case Dependabot cannot open a pull request for
+#      (scripts/check-held-majors.sh)
+#   6. the production image builds
+#   7. smoke: the running container serves client, API, health, security
 #      headers — and runs as a non-root user
-#   7. end-to-end: Playwright against the production container
-#   8. mutation canary: a planted server bug must fail the tests
+#   8. end-to-end: Playwright against the production container
+#   9. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -46,7 +49,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=8
+CHECKS_TOTAL=9
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -245,6 +248,19 @@ else
   fail "OpenAPI contract drift (spec or generated types are stale)"
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true
+
+banner "Held majors: every newer major can install, so Dependabot can offer it"
+# The self-test runs first, every time: it replays the failure this check
+# exists for from published versions, so a check that has lost the ability
+# to fail is caught here rather than trusted.
+if ./scripts/check-held-majors.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-held-majors.sh >> "$LOG" 2>&1; then
+  grep -E ' -> |^self-test' "$LOG" || true
+  pass "No dependency is held behind a major that cannot install"
+else
+  tail -40 "$LOG"
+  fail "Held majors (an uninstallable major, a stale .held-majors entry, or a broken self-test)"
+fi
 
 banner "Production image builds"
 # VERIFY_DOCKER_BUILD_ARGS lets CI pass layer-cache flags; it changes how
