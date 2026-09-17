@@ -14,14 +14,17 @@
 #   5. response DTOs: no response schema in that spec has a field named like
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
-#   6. the production image builds
-#   7. byte budget: that image's client build, in gzip bytes, is within
+#   6. database runtime role: scripts/db/runtime-role.sql, applied to a real
+#      PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
+#      checker over-privileges a second role and must catch it)
+#   7. the production image builds
+#   8. byte budget: that image's client build, in gzip bytes, is within
 #      client/byte-budget.json (the checker plants 300 KB and must catch it)
-#   8. smoke: the running container serves client, API, health, security
-#      headers, refuses a Host it was not configured for — and runs as a
-#      non-root user
-#   9. end-to-end: Playwright against the production container
-#  10. mutation canary: a planted server bug must fail the tests
+#   9. smoke: the running container serves client, API, health, security
+#      headers, refuses a Host it was not configured for, runs as a
+#      non-root user — and `--migrate` applies and exits instead of serving
+#  10. end-to-end: Playwright against the production container
+#  11. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -52,7 +55,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=10
+CHECKS_TOTAL=11
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -82,6 +85,7 @@ fi
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
   docker rm -f "$NAME-verify-e2e" > /dev/null 2>&1
+  docker rm -f "$NAME-verify-migrate" "$NAME-verify-db" > /dev/null 2>&1
   docker rm -f "$NAME-byte-budget-src" "$NAME-byte-budget" "$NAME-check-pii" > /dev/null 2>&1
   docker network rm "$NET" > /dev/null 2>&1
   rm -f "$LOG"
@@ -260,6 +264,13 @@ else
   fail "Response DTO discipline (a PII-named response field, or the checker's self-test)"
 fi
 
+banner "Database runtime role: rows yes, schema no"
+if ./scripts/db/check-runtime-role.sh 2>&1 | tee "$LOG"; then
+  pass "The runtime role can read and write rows and is refused DDL (and an over-privileged role was caught)"
+else
+  fail "Database runtime role (scripts/db/runtime-role.sql, or the checker's self-test)"
+fi
+
 banner "Production image builds"
 # VERIFY_DOCKER_BUILD_ARGS lets CI pass layer-cache flags; it changes how
 # fast the image builds, not what is built.
@@ -278,6 +289,24 @@ if ./scripts/check-byte-budget.sh "$IMAGE" 2>&1 | tee "$LOG"; then
 else
   fail "Byte budget (something grew past client/byte-budget.json, or the checker's self-test)"
 fi
+
+# `--migrate` must apply and EXIT 0 without serving (Migrations.cs): it is the
+# deploy's migration step. Detached and polled rather than run in the
+# foreground, so an image that serves instead fails here in 30 s rather than
+# hanging the suite.
+migrate_applies_and_exits() {
+  local ctr="$NAME-verify-migrate" state=""
+  docker rm -f "$ctr" > /dev/null 2>&1
+  docker run -d --name "$ctr" "$IMAGE" --migrate > /dev/null || return 1
+  for _ in $(seq 1 30); do
+    state="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$ctr" 2> /dev/null)"
+    [ "${state%% *}" = exited ] && break
+    sleep 1
+  done
+  docker logs "$ctr" 2>&1 | grep -q '^migrate:' || state="no migrate output"
+  docker rm -f "$ctr" > /dev/null 2>&1
+  [ "$state" = "exited 0" ] || { echo "--migrate did not apply and exit 0 (got: $state)"; return 1; }
+}
 
 banner "Smoke: production container serves client, API and health, as non-root"
 docker network create "$NET" > /dev/null 2>&1
@@ -298,7 +327,8 @@ if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][
    && curl -fsS "http://localhost:$SMOKE_PORT/" | grep -q '<div id="root">' \
    && curl -fsS "http://localhost:$SMOKE_PORT/api/hello" | grep -q '"message":"Hello from the API"' \
    && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff' \
-   && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ]; then
+   && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ] \
+   && migrate_applies_and_exits; then
   pass "Container serves the client, API, health and security headers as non-root"
 else
   docker logs "$APP" 2>&1 | tail -40

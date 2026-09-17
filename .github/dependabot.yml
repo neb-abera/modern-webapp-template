@@ -42,8 +42,9 @@ updates:
       docker-minor-patch:
         update-types: [minor, patch]
 
-  # Covers image tags in compose.yaml (e.g. the optional postgres service,
-  # once uncommented). The docker ecosystem above only scans Dockerfiles.
+  # Covers image tags in compose.yaml (e.g. the postgres service behind the
+  # `db` profile, whose digest scripts/db/check-runtime-role.sh also reads).
+  # The docker ecosystem above only scans Dockerfiles.
   - package-ecosystem: docker-compose
     directory: /
     schedule:

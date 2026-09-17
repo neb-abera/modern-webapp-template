@@ -122,6 +122,35 @@ when they are unset so the deploy stays safe before they are configured.
 
 ## Databases
 
-Run migrations from the production image (the same code path production
-uses), and make the on-startup migration a no-op when everything is already
-applied — CI should exercise both, against a real database service.
+**Migrations are a deploy step, not something the app does on the way up.**
+The production image applies them and exits when run with `--migrate`
+(`server/Api/Migrations.cs`), and the pipeline runs that — as the *migrator*
+role — before the new revision takes traffic:
+
+```bash
+docker run --rm -e "ConnectionStrings__Default=$MIGRATOR_CONNECTION_STRING" \
+  "$REGISTRY/$IMAGE:$GITHUB_SHA" --migrate
+```
+
+`deploy.yml.example` has this step; it skips with a notice until the
+`MIGRATOR_CONNECTION_STRING` secret exists, and a failed migration stops the
+deploy with the old revision still serving. Where the database is not
+reachable from the runner, run the same image and argument as a one-off job
+inside the network (an Azure Container Apps job, a Kubernetes Job).
+
+`MIGRATE_ON_BOOT` defaults to `false` and should stay that way outside local
+development. An app that migrates on boot must serve with a connection string
+that can `ALTER` and `DROP`, and every replica races to migrate on scale-out.
+Two roles instead:
+
+| Role | Used by | May |
+| --- | --- | --- |
+| migrator | the `--migrate` step only | own the tables; DDL |
+| runtime | the serving app | `SELECT`/`INSERT`/`UPDATE`/`DELETE` and sequence use — nothing else |
+
+[`scripts/db/runtime-role.sql`](../scripts/db/runtime-role.sql) sets the
+runtime role up (grants plus default privileges, so migrations never need a
+`GRANT`), and `make verify` proves it against the PostgreSQL that
+`compose.yaml` pins: rows work; `CREATE`, `ALTER`, `DROP` and `TRUNCATE` are
+refused. Write every migration so that the previous revision keeps working
+against the new schema — it is still serving while the step runs.

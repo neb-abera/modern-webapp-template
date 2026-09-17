@@ -157,9 +157,14 @@ compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile
 
 ### Adding a database
 
-Uncomment the `db` service in [`compose.yaml`](compose.yaml) (PostgreSQL 18)
-and add a connection string to the server. Keep the pattern: every dependency
-runs in a container.
+`docker compose --profile db up -d db` starts PostgreSQL 18 (digest-pinned in
+[`compose.yaml`](compose.yaml); `make ports`' sibling `DB_PORT` in `.env` says
+where). Keep the pattern: every dependency runs in a container. The
+extension points are already machinery — `--migrate` as a separate deploy
+step, `MIGRATE_ON_BOOT` off, and a runtime database role proven unable to
+change the schema — and
+[docs/manual-setup.md](docs/manual-setup.md#8-the-day-you-add-a-database)
+has the data-layer defaults to adopt with it.
 
 ## After generating from this template
 

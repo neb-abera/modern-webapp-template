@@ -146,3 +146,65 @@ that. What is left is judgment, so it is manual:
   table in [SECURITY.md](../SECURITY.md)): `SignInRefused` wherever a sign-in
   attempt is turned away — with the enum reason, never the attempted user
   name — and `AntiforgeryRejected` where antiforgery validation fails.
+
+## 8. The day you add a database
+
+Already machinery, and nothing to do: the `db` compose profile, `--migrate`
+as a separate deploy step with `MIGRATE_ON_BOOT` off
+([deploying.md](deploying.md#databases)), and the runtime role proven unable
+to change the schema (`scripts/db/check-runtime-role.sh`). What needs a
+person:
+
+- **Create two roles, and give the app the lesser one.** A migrator that owns
+  the database, and a runtime login; run `scripts/db/runtime-role.sql` once as
+  the migrator. The app's `ConnectionStrings__Default` is the runtime role's;
+  the migrator's exists only as the `MIGRATOR_CONNECTION_STRING` deploy
+  secret. Manual because creating logins needs your platform's credentials.
+- **Put the migration call in `Migrations.ApplyAsync`** — one line,
+  `Database.MigrateAsync()`; its comment says where.
+- **Register the DbContext read-only by default.** Most requests only read,
+  and change tracking is the cost nobody asked for:
+
+  ```csharp
+  builder.Services.AddDbContext<AppDbContext>(options => options
+      .UseNpgsql(connectionString, npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+      .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+  ```
+
+  A handler that writes asks for tracking (`.AsTracking()`), so the expensive
+  path is the visible one. Split queries stop two `Include`d collections
+  multiplying into a cartesian product.
+- **Count commands in tests.** N+1 is invisible until production; an
+  interceptor makes it an assertion. Register it in the test host and assert
+  on the endpoints that list things:
+
+  ```csharp
+  internal sealed class CommandCounter : DbCommandInterceptor
+  {
+      private int count;
+      public int Count => count;
+
+      public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+          DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+          CancellationToken cancellationToken = default)
+      {
+          Interlocked.Increment(ref count);
+          return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+      }
+  }
+
+  // Twenty notes must cost what two cost.
+  Assert.True(counter.Count <= 2, $"GET /api/notes ran {counter.Count} commands");
+  ```
+- **Output caching goes after authorization, never before.** `UseOutputCache`
+  below `UseAuthorization`, so a cached body is only ever served to a request
+  that was just authorized for it. Anything per-user varies by the user
+  (`policy.VaryByValue(context => new("user", context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ""))`),
+  every cached read carries a tag, and every write evicts it
+  (`IOutputCacheStore.EvictByTagAsync`). The test that must exist before the
+  policy does: two principals request the same URL and **never** receive each
+  other's body — `TestIdentity.As(host, "alice")` and `"bob"` make it four
+  lines.
+- **Review migrations for indexes** — the pull request template has the
+  checklist: an index for each `WHERE` + `ORDER BY` pair, and one for the
+  second column of a composite key when it is filtered alone.
