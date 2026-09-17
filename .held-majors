@@ -1,0 +1,14 @@
+# Majors that cannot install beside their manifest, accepted with reasoning.
+# scripts/check-held-majors.sh reads this; the format is
+#
+#   <directory> <package> <reason>
+#
+# An entry is a debt: the check fails once the bump installs or there is no
+# newer major left, so nothing here outlives its reason.
+
+# openapi-typescript 7 drives the TypeScript JavaScript compiler API and peers
+# on typescript ^5.x; the Go-based TypeScript 7 does not ship that API. This
+# manifest exists to hold that pair. Mirrors the typescript semver-major
+# ignore in .github/dependabot.yml; both go when openapi-typescript widens
+# the range.
+tools/api-types typescript openapi-typescript 7 peers on typescript ^5.x
