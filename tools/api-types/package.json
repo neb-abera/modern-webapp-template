@@ -1,0 +1,9 @@
+{
+  "name": "api-types",
+  "private": true,
+  "description": "The client type generator, kept apart from client/package.json because it needs a different TypeScript: openapi-typescript 7 builds its output with the TypeScript 5 JavaScript compiler API (peer typescript ^5.x), which the Go-based TypeScript 7 the client compiles with does not ship. npm cannot hold both under one root, so the generator gets its own tree and lockfile.",
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}
