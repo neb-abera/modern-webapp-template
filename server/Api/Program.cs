@@ -2,6 +2,7 @@ using Api;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Net.Http.Headers;
 
@@ -68,6 +69,9 @@ builder.Services.AddHealthChecks();
 // compressible responses (BREACH needs both in one body).
 builder.Services.AddResponseCompression(options => options.EnableForHttps = true);
 
+// Who the visitor is, behind however many proxies: see ClientAddress.cs.
+builder.Services.Configure<ForwardedHeadersOptions>(options => ClientAddress.Configure(options, builder.Configuration));
+
 // The permit limit is env-configurable because CI and e2e suites arrive from
 // one address: a test suite tripping a rate limit looks like a broken app
 // rather than a working control. Production leaves the default alone.
@@ -77,11 +81,15 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            ClientAddress.PartitionKey(context),
             _ => new FixedWindowRateLimiterOptions { PermitLimit = permitLimit, Window = TimeSpan.FromSeconds(10) }));
 });
 
 var app = builder.Build();
+
+// First, before anything reads the connection: every later middleware — the
+// rate limiter, the logs — must see the resolved client, never the proxy.
+app.UseForwardedHeaders();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
