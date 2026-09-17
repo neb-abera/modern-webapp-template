@@ -5,8 +5,8 @@
 #   ./scripts/setup.sh
 #
 # What it does:
-#   1. renames the app after your repository (page title, heading, e2e
-#      expectation, README badge and links, SECURITY.md advisory URL) and
+#   1. renames the app after your repository (page title, heading, the unit
+#      and e2e expectations of that heading, README badge and links, SECURITY.md advisory URL) and
 #      pushes the change
 #   2. enables the GitHub security settings templates cannot carry over:
 #      secret scanning, push protection, private vulnerability reporting,
@@ -65,7 +65,8 @@ if [ "$owner_repo" = "$TEMPLATE_OWNER_REPO" ]; then
 else
   step "Renaming the app to \"$repo\""
   NEW_NAME="$repo" OLD_NAME="$TEMPLATE_NAME" perl -pi -e 's/\Q$ENV{OLD_NAME}\E/$ENV{NEW_NAME}/g' \
-    client/index.html client/src/App.tsx e2e/smoke.spec.ts README.md
+    client/index.html client/src/App.tsx client/tests/entry-server.test.tsx \
+    e2e/smoke.spec.ts e2e/delivery.spec.ts README.md
   # README links and the private-advisory URLs (SECURITY.md and the issue
   # template contact link) point at the generated repository, not the
   # template.
@@ -74,7 +75,8 @@ else
   if git diff --quiet; then
     done_ "already renamed"
   else
-    git add client/index.html client/src/App.tsx e2e/smoke.spec.ts README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
+    git add client/index.html client/src/App.tsx client/tests/entry-server.test.tsx \
+      e2e/smoke.spec.ts e2e/delivery.spec.ts README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
     git commit -q -m "Rename app after repository ($repo) via scripts/setup.sh"
     if git push -q origin "HEAD:$default_branch" 2> /dev/null; then
       done_ "renamed and pushed to $default_branch"
