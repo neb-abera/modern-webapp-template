@@ -14,6 +14,9 @@ playwright-report/
 test-results/
 coverage/
 
+# The probe client/tests/image-rule.test.ts lints; it removes it itself
+.image-rule-*/
+
 # Environment and editor
 .env
 .env.local

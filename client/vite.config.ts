@@ -7,12 +7,20 @@ import { defineConfig } from "vite";
 // once (--ssr) for the build-time renderer, whose single output file must
 // land at a fixed name for tools/prerender.mjs to import.
 export default defineConfig(({ isSsrBuild }) => ({
-  build: isSsrBuild
-    ? {
-        outDir: "dist-server",
-        rollupOptions: { output: { entryFileNames: "[name].js" } },
-      }
-    : {},
+  build: {
+    // Never inline an asset as a data: URI. The Content-Security-Policy is
+    // default-src 'self', which refuses data: images — an icon under Vite's
+    // 4 KB default would build fine and render as a broken image. Both
+    // builds, because the prerendered markup must name the same URL the
+    // browser bundle does.
+    assetsInlineLimit: 0,
+    ...(isSsrBuild
+      ? {
+          outDir: "dist-server",
+          rollupOptions: { output: { entryFileNames: "[name].js" } },
+        }
+      : {}),
+  },
   plugins: [react()],
   server: {
     host: true,

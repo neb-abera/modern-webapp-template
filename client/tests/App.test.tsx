@@ -65,3 +65,22 @@ test("an unmount mid-request aborts quietly instead of surfacing an error", asyn
   expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   await Promise.resolve();
 });
+
+test("every image reserves its box and decodes off the main thread", async () => {
+  stubFetch(Response.json({ message: "hi" } satisfies Greeting));
+
+  const { container } = render(<App />);
+  await screen.findByText("hi");
+
+  const images = [...container.querySelectorAll("img")];
+  expect(images.length).toBeGreaterThan(0);
+  for (const image of images) {
+    expect(image).toHaveAttribute("width");
+    expect(image).toHaveAttribute("height");
+    expect(image).toHaveAttribute("decoding", "async");
+    // Lazy and high priority contradict each other.
+    if (image.getAttribute("loading") === "lazy") {
+      expect(image).not.toHaveAttribute("fetchpriority", "high");
+    }
+  }
+});
