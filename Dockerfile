@@ -6,7 +6,7 @@
 # bookworm-slim (glibc 2.36) stays binary-compatible with the Ubuntu-based
 # .NET SDK image the dev stage copies Node into.
 #
-FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS node-base
+FROM node:26-bookworm-slim@sha256:c8fedd782bcd1b68d8a7d1ed2577b5f820eba820871323f605292651ff11e3c6 AS node-base
 
 #
 # Client build
