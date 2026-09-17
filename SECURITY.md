@@ -27,7 +27,12 @@ Projects generated from this template ship with:
 
 * security response headers on every response (CSP, `nosniff`,
   `Referrer-Policy`, `Permissions-Policy`) with tests pinning them down,
-* IP-partitioned rate limiting on the API,
+* rate limiting on every endpoint, partitioned by the real client address
+  behind trusted proxies (static files and `/healthz` are not counted), with
+  each refusal logged as a security event (below),
+* a settings file with deliberate values: only configured `Host` headers are
+  answered, request bodies over 1 MB are refused, and authorization failures
+  are not filtered out of the log,
 * a distroless-style chiseled production image running as a non-root user —
   declared explicitly (`USER $APP_UID` in the Dockerfile) and asserted by
   the verify suite's smoke check, so a base-image change cannot silently
@@ -47,6 +52,33 @@ Projects generated from this template ship with:
   production image for known CVEs and OWASP ZAP baseline-scans the running
   container, on every PR and weekly (`security-scan.yml`); the two accepted
   ZAP findings are documented in [.zap/rules.tsv](.zap/rules.tsv).
+
+## Security event log
+
+Security-relevant refusals are logged under the category `Api.SecurityEvents`
+with event ids that never change, so alerts and saved queries can be written
+against the number (`server/Api/SecurityEvents.cs`; a test pins the table).
+
+| EventId | Name | Raised when | Carries |
+| --- | --- | --- | --- |
+| 1001 | `RateLimitRejected` | a request is refused with 429 | method, route pattern, client address |
+| 1002 | `AuthenticationRequired` | a request is refused with 401 | method, route pattern, client address |
+| 1003 | `AccessDenied` | an authenticated user is refused with 403 | method, route pattern, client address, user id |
+| 1004 | `AntiforgeryRejected` | an antiforgery token is missing or invalid | method, route pattern, client address |
+| 1005 | `SignInRefused` | a sign-in attempt is refused | reason (an enum), client address |
+| 1006 | `WebhookSignatureRejected` | a webhook's signature does not verify | route pattern, client address |
+
+An event carries the **route pattern** (`/api/notes/{id}`), never the path
+that matched it or the query string; the **resolved client address**
+(`ClientAddress`, the same one the rate limiter keys on — see
+[docs/deploying.md](docs/deploying.md)); and an opaque user id where there is
+one. It never carries a header, cookie, body, token, email address or name —
+a test sends all of those and asserts none reaches the log.
+
+1001 fires in the template as shipped. 1002–1006 are named slots:
+the first code that signs a user in, accepts a webhook or posts a form calls
+the matching method ([docs/manual-setup.md](docs/manual-setup.md) says
+where), so the numbers are already stable when the first alert is written.
 
 GitHub does not inherit repo-level settings from templates (secret scanning +
 push protection, private vulnerability reporting, Dependabot alerts and
