@@ -54,6 +54,14 @@ admin of the repo.
   Without the secrets the purge job warns and skips; with the cache rule but
   no purge, deploys serve stale pages for up to the rule's TTL.
 
+- **Tell the app how many proxies are in front of it.** Set
+  `ForwardedHeaders__TrustedHops` on the container (`2` for Cloudflare +
+  cloud ingress, `1` for an ingress alone) and lock the origin to the CDN's
+  ranges. Left at the default `0` behind a proxy, every visitor shares one
+  rate-limit bucket. Manual because only you know your topology;
+  [deploying.md](deploying.md#behind-a-proxy-whose-address-is-it) has the
+  reasoning.
+
 ## 4. Commit signing — one script per machine
 
 `setup.sh` configures signing automatically: `scripts/setup-signing.sh`

@@ -54,6 +54,46 @@ it was learned the hard way; keep them if you adapt it to another host.
    to *Zone → Cache Purge* only) and skips with a warning until they exist —
    so it is safe before Cloudflare is configured and correct after.
 
+## Behind a proxy: whose address is it?
+
+The rate limiter gives each client its own bucket, and the security log names
+the client that was refused. Behind a CDN and a cloud ingress the socket peer
+is the ingress, for every visitor — so unless the app is told how many proxies
+stand in front of it, all visitors share one bucket and one burst locks
+everyone out. `server/Api/ClientAddress.cs` is the single place the client
+address is resolved; it is configured with one number:
+
+| Setting (environment variable) | Value | When |
+| --- | --- | --- |
+| `ForwardedHeaders__TrustedHops` | `0` (default) | Nothing in front of the app: the socket peer is the client, `X-Forwarded-For` is ignored. Local runs, tests, CI. |
+| | `1` | One proxy (a cloud ingress or load balancer). |
+| | `2` | **Cloudflare → cloud ingress → app**, the shape this template's production estate runs. |
+| `ForwardedHeaders__KnownProxies__0`, `…__1` | IP addresses | Optional second lock: a hop is honoured only when the address reporting it is listed. |
+| `ForwardedHeaders__KnownNetworks__0`, `…__1` | CIDR ranges | The same, for ranges (the CDN's published ranges, the ingress subnet). |
+
+The number is the count of proxies **you operate or contract**, not the number
+of entries in the header. Each proxy appends the peer it saw, so with two
+trusted hops the second entry from the right was written by infrastructure;
+anything further left is whatever the client chose to send, and is ignored. Set
+it too low and visitors share a bucket; set it too high and a client chooses
+its own bucket by writing the header itself.
+
+Hop counting is only sound while **the origin accepts traffic from the proxy
+chain and nothing else**. Lock the container app's ingress to the CDN's
+published ranges (Cloudflare: <https://www.cloudflare.com/ips/>; Azure
+Container Apps: ingress IP restrictions, allow-list mode). With the origin
+open, anyone who finds its hostname connects with one hop fewer than you
+counted and their forged entry lands exactly where the app looks. If you cannot
+lock the origin, set `KnownNetworks` — a forged chain from an unlisted peer is
+then refused rather than believed.
+
+```bash
+az containerapp update --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+  --set-env-vars ForwardedHeaders__TrustedHops=2
+```
+
+IPv6 clients are bucketed per /64, the unit an ISP hands one subscriber.
+
 ## Configuration that reaches the browser
 
 Client-side configuration (`import.meta.env.VITE_*`) is resolved when the
