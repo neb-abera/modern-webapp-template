@@ -48,6 +48,25 @@ USER app
 WORKDIR /work
 
 #
+# The client type generator: openapi-typescript and the TypeScript 5 it needs,
+# from their own manifest and lockfile (tools/api-types/package.json says why
+# they cannot share the client's). Only node_modules leaves this stage.
+#
+FROM node-base AS apitypes
+WORKDIR /work/tools/api-types
+COPY tools/api-types/package.json tools/api-types/package-lock.json ./
+RUN npm ci
+
+#
+# Everything that regenerates the API contract: the .NET SDK, whose build
+# emits server/Api/openapi.json, and the generator's tree for the client
+# types. `make contract` runs this with the checkout mounted at /work.
+#
+FROM dev AS contract
+COPY --from=apitypes --chown=app:app /work/tools/api-types/node_modules /work/tools/api-types/node_modules
+CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true && cd client && npm run generate:api-types"]
+
+#
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
