@@ -29,3 +29,19 @@ and tune `load/smoke.js` to your app's real endpoints.
 
 Compression, immutable hashed-asset caching, and the e2e tests pinning both
 are covered in the delivery test suite (`e2e/delivery.spec.ts`).
+
+### Static responses carry no cookies
+
+The document, the prerendered pages, the SPA shell and everything under
+`/assets` are identical for every visitor, which is what lets a CDN serve
+them. One `Set-Cookie` header ends that: the edge stops caching the response
+(or caches one visitor's cookie for everyone), and the browser starts sending
+the cookie back with every asset request. It arrives innocently — session,
+antiforgery or authentication middleware added to the whole pipeline issues
+its cookie on the first response, whatever that response is.
+
+So those mount **under `/api` only**: scope them with
+`app.UseWhen(context => context.Request.Path.StartsWithSegments("/api"), api => api.UseSession())`
+(or a route group), and never call them above `UseStaticFiles`. A server test
+(`StaticResponsesSetNoCookies`) and an e2e test (`the document and hashed
+assets set no cookies`) fail the day a static response sets one.

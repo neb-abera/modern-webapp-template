@@ -50,6 +50,27 @@ test("hashed assets are cacheable, the document is not", async ({ page }) => {
   expect(docCache).toContain("no-cache");
 });
 
+test("the document and hashed assets set no cookies", async ({ page }) => {
+  // A Set-Cookie on a static response makes it per-visitor: a CDN will not
+  // cache it (or worse, caches one visitor's cookie for everyone), and every
+  // asset request starts carrying the cookie back. Session and antiforgery
+  // middleware mounted on the whole pipeline is how it happens; they belong
+  // under /api only (docs/performance.md).
+  const responses = await loadApp(page);
+
+  const doc = responses.find((res) => new URL(res.url()).pathname === "/");
+  const assets = responses.filter(isAsset);
+  expect(doc).toBeDefined();
+  expect(assets.length).toBeGreaterThan(0);
+
+  for (const res of [doc, ...assets]) {
+    const cookies = (await res?.headersArray())?.filter(
+      (header) => header.name.toLowerCase() === "set-cookie",
+    );
+    expect(cookies, `${res?.url()} sets a cookie`).toEqual([]);
+  }
+});
+
 test("the home page is readable before any JavaScript runs", async ({ browser }) => {
   // Prerendering's whole promise: first paint is the page, not a blank shell
   // waiting on the bundle. A browser with JS disabled is the strictest proof.

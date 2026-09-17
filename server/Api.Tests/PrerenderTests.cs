@@ -145,4 +145,24 @@ public sealed class PrerenderPipelineTests : IDisposable
 
         Assert.Equal("public, max-age=31536000, immutable", response.Headers.CacheControl?.ToString());
     }
+
+    // Static responses are the same for every visitor, and a Set-Cookie makes
+    // them per-visitor: uncacheable at the edge, and echoed back on every
+    // asset request. Session, antiforgery and authentication cookies mount
+    // under /api only (docs/performance.md); this fails the day one of them
+    // is added to the whole pipeline.
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/about")]
+    [InlineData("/dashboard")]
+    [InlineData("/assets/index-abc123.js")]
+    public async Task StaticResponsesSetNoCookies(string path)
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"), $"{path} sets a cookie");
+    }
 }
