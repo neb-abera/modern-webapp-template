@@ -101,20 +101,26 @@ services:
       app:
         condition: service_healthy
 
-  # Need a database? Uncomment and add a connection string to the server.
-  # db:
-  #   image: postgres:18-alpine
-  #   environment:
-  #     POSTGRES_PASSWORD: dev-only-password
-  #   ports:
-  #     - "${DB_PORT:-5432}:5432"
-  #   volumes:
-  #     - pgdata:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
+  # The database, off until asked for (`docker compose --profile db up -d db`).
+  # A real service under a profile rather than a commented-out block: the image
+  # is pinned by digest and kept current by Dependabot, and
+  # scripts/db/check-runtime-role.sh (part of `make verify`) reads THIS line to
+  # choose the PostgreSQL it proves the runtime role's grants against.
+  # docs/manual-setup.md, "The day you add a database", has the rest.
+  db:
+    profiles: [db]
+    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    environment:
+      POSTGRES_PASSWORD: dev-only-password
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-# volumes:
-#   pgdata:
+volumes:
+  pgdata:

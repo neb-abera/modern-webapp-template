@@ -133,6 +133,20 @@ builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, Authorizati
 
 var app = builder.Build();
 
+// Schema changes are a deploy step of their own, not something serving does on
+// the way up: see Migrations.cs. `--migrate` applies and exits without ever
+// listening; MIGRATE_ON_BOOT (default false) is the local-development shortcut.
+if (args.Contains(Migrations.Argument))
+{
+    await Migrations.ApplyAsync(app.Services, Console.Out).ConfigureAwait(false);
+    return 0;
+}
+
+if (Migrations.OnBoot(app.Configuration))
+{
+    await Migrations.ApplyAsync(app.Services, Console.Out).ConfigureAwait(false);
+}
+
 // First, before anything reads the connection: every later middleware — the
 // rate limiter, the logs — must see the resolved client, never the proxy.
 app.UseForwardedHeaders();
