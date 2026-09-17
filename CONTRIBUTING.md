@@ -11,6 +11,7 @@ The host needs only Docker and git — the toolchain lives in containers.
 ```bash
 make dev      # run the app locally (hot reload)
 make verify   # run the full verification suite, exactly as CI does
+make contract # after changing an API shape: regenerate openapi.json and the client types
 ```
 
 `make verify` is the merge gate run locally: server build and unit tests,
@@ -18,6 +19,10 @@ client typecheck/lint/tests, a production image build, a smoke test of the
 running container, the Playwright end-to-end suite, and a mutation canary.
 If it is green on your machine, CI will agree — both run the same
 containers.
+
+`make verify` also fails if `server/Api/openapi.json` or
+`client/src/api-types.d.ts` is not what the code generates. After changing a
+request or response shape, run `make contract` and commit both files.
 
 ## Making a change
 

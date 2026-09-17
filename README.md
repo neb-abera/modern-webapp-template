@@ -33,8 +33,8 @@ Docker, gated by a test-driven verification suite, and secured by default.
 
 * **A mechanized API contract** — the server emits its OpenAPI document at
   build time (`server/Api/openapi.json`), the client's response types are
-  generated from it (`client/src/api-types.d.ts`, `npm run
-  generate:api-types`), and the verify suite regenerates both and fails on
+  generated from it (`client/src/api-types.d.ts`; `make contract`
+  regenerates both), and the verify suite regenerates both and fails on
   any drift — a hand-written client type that silently diverges from the
   server cannot exist here,
 
@@ -138,6 +138,7 @@ run inside containers.
 server/           .NET 10 minimal API (Api/) and its xUnit v3 tests (Api.Tests/)
 client/           React 19 + TypeScript + Vite app, Vitest tests, Biome config
 e2e/              Playwright suite, run against the production container
+tools/api-types/  openapi-typescript and the TypeScript 5 it needs, in a manifest of their own
 scripts/          verify.sh — the verification suite CI and `make verify` share
 Dockerfile        client build, server build, dev toolchain and runtime stages
 compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile

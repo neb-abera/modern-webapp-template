@@ -63,6 +63,18 @@ services:
     depends_on:
       - server
 
+  # One-shot (`make contract`): regenerate server/Api/openapi.json and
+  # client/src/api-types.d.ts into the checkout. The generator's node_modules
+  # stays the image's.
+  contract:
+    profiles: [tools]
+    build:
+      context: .
+      target: contract
+    volumes:
+      - .:/work
+      - /work/tools/api-types/node_modules
+
   # Load-test harness (`make load`): k6 drives the production-like app.
   # A harness rather than a CI gate - shared runners make load numbers
   # noise; run it on quiet hardware when you want real answers.
