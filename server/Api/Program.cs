@@ -102,6 +102,20 @@ var permitLimit = builder.Configuration.GetValue<int?>("RATE_LIMIT_PERMIT") ?? 1
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // A refusal is a security event (SecurityEvents.cs says what one may
+    // carry), and the client is told when to come back.
+    options.OnRejected = (rejected, _) =>
+    {
+        var http = rejected.HttpContext;
+        if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            http.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        SecurityEvents.RateLimitRejected(
+            SecurityEvents.Logger(http), http.Request.Method, SecurityEvents.Route(http), SecurityEvents.Client(http));
+        return ValueTask.CompletedTask;
+    };
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             ClientAddress.PartitionKey(context),
