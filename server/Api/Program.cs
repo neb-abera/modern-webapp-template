@@ -123,6 +123,11 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions { PermitLimit = permitLimit, Window = TimeSpan.FromSeconds(10) }));
 });
 
+// External hosts the app may store URLs for and show images from; empty by
+// default. One list for both, see UrlAllowlist.cs.
+var urlAllowlist = UrlAllowlist.From(builder.Configuration);
+builder.Services.AddSingleton(urlAllowlist);
+
 // Closed unless opened: an endpoint with no authorization metadata requires an
 // authenticated user. Every endpoint below says AllowAnonymous out loud, and a
 // test (EveryEndpointDeclaresWhoMayCallIt) fails on one that says nothing.
@@ -154,12 +159,15 @@ app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
+var contentSecurityPolicy =
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" + urlAllowlist.ImgSrcDirective;
+
 // Security headers on every response. TLS termination (and therefore HSTS)
 // belongs to the ingress in front of the container.
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
-    headers.ContentSecurityPolicy = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    headers.ContentSecurityPolicy = contentSecurityPolicy;
     headers.XContentTypeOptions = "nosniff";
     headers["Referrer-Policy"] = "no-referrer";
     headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()";
