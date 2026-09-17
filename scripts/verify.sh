@@ -11,21 +11,24 @@
 #      (vitest.config's coverage.thresholds fail the run on their own)
 #   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   5. response DTOs: no response schema in that spec has a field named like
+#   5. held majors: no dependency's next major is uninstallable, which is
+#      the case Dependabot cannot open a pull request for
+#      (scripts/check-held-majors.sh)
+#   6. response DTOs: no response schema in that spec has a field named like
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
-#   6. database runtime role: scripts/db/runtime-role.sql, applied to a real
+#   7. database runtime role: scripts/db/runtime-role.sql, applied to a real
 #      PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
 #      checker over-privileges a second role and must catch it)
-#   7. the production image builds
-#   8. byte budget: that image's client build, in gzip bytes, is within
+#   8. the production image builds
+#   9. byte budget: that image's client build, in gzip bytes, is within
 #      client/byte-budget.json (the checker plants 300 KB and must catch it)
-#   9. smoke: the running container serves client, API, health, security
+#  10. smoke: the running container serves client, API, health, security
 #      headers, refuses a Host it was not configured for (but answers
 #      /healthz on it), will not start with no hosts configured, runs as a
 #      non-root user — and `--migrate` applies and exits instead of serving
-#  10. end-to-end: Playwright against the production container
-#  11. mutation canary: a planted server bug must fail the tests
+#  11. end-to-end: Playwright against the production container
+#  12. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -56,7 +59,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=11
+CHECKS_TOTAL=12
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -257,6 +260,19 @@ else
   fail "OpenAPI contract drift (spec or generated types are stale)"
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true
+
+banner "Held majors: every newer major can install, so Dependabot can offer it"
+# The self-test runs first, every time: it replays the failure this check
+# exists for from published versions, so a check that has lost the ability
+# to fail is caught here rather than trusted.
+if ./scripts/check-held-majors.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-held-majors.sh >> "$LOG" 2>&1; then
+  grep -E ' -> |^self-test' "$LOG" || true
+  pass "No dependency is held behind a major that cannot install"
+else
+  tail -40 "$LOG"
+  fail "Held majors (an uninstallable major, a stale .held-majors entry, or a broken self-test)"
+fi
 
 banner "Response DTOs: no personal or secret fields leave the API unlisted"
 if ./scripts/check-response-pii.sh 2>&1 | tee "$LOG"; then

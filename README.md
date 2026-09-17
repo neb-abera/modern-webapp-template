@@ -21,19 +21,21 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a Playwright end-to-end suite that runs against the *production image*,
   not a dev server,
 
-* **One verification suite everywhere** — `make verify` runs eleven checks
+* **One verification suite everywhere** — `make verify` runs twelve checks
   with a running pass/fail tally: a drift guard proving branch protection
   requires every PR-gating check, server build+tests with a line-coverage
   gate (warnings as errors), client typecheck+lint+tests with coverage
   thresholds, an OpenAPI contract check proving the committed spec and the
-  generated client types match the code, a response-DTO check (no field named
-  like personal or secret data leaves the API unlisted), a database
-  runtime-role check against a real PostgreSQL, production image build, a
-  byte budget on that image's client build, container smoke test (which also
-  asserts the image runs as a non-root uid), e2e, and a mutation canary
-  proving the tests catch planted bugs. Every checker that was added proves
-  on each run that it can fail, by planting the defect it exists to catch. CI
-  runs exactly the same script, so green locally means green in CI,
+  generated client types match the code, a held-majors check that fails when
+  a dependency's next major cannot install (the one case Dependabot stays
+  silent about), a response-DTO check (no field named like personal or secret
+  data leaves the API unlisted), a database runtime-role check against a real
+  PostgreSQL, production image build, a byte budget on that image's client
+  build, container smoke test (which also asserts the image runs as a
+  non-root uid), e2e, and a mutation canary proving the tests catch planted
+  bugs. Every checker that was added proves on each run that it can fail, by
+  planting the defect it exists to catch. CI runs exactly the same script, so
+  green locally means green in CI,
 
 * **A mechanized API contract** — the server emits its OpenAPI document at
   build time (`server/Api/openapi.json`), the client's response types are
