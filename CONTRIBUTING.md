@@ -44,6 +44,27 @@ request or response shape, run `make contract` and commit both files.
   CodeQL, the container scan, the ZAP baseline scan), so a failing check is
   the review — fix it rather than working around it.
 
+## Raising a byte budget
+
+`make verify` measures the production client build in gzip bytes — the entry
+script, the entry stylesheet, the initial total for `/`, and each prerendered
+page — against `client/byte-budget.json`, and fails when any of them is over.
+The budget sits 15–20% above what was last measured, so ordinary work fits
+and a new dependency does not slip in unnoticed. (`entryCss` is `0` because
+the template ships no stylesheet: the first one is a deliberate raise.)
+
+When it fails, the run prints every measurement. In this order:
+
+1. Find what grew — `npx vite build` reports each chunk; a dependency that
+   arrived for one function is the usual answer, and the fix is not needing
+   it, importing less of it, or loading it lazily off the entry path.
+2. If the growth is the feature, raise the number **in the same pull request
+   as the code that needs it**, to about 15–20% above the new measurement,
+   and say in the description what the bytes bought. A budget raised in a
+   pull request of its own has no reason attached, and one raised "to make CI
+   green" has the wrong one.
+3. Never raise a budget to absorb growth you have not explained.
+
 ## Licensing
 
 This project is licensed under Apache-2.0. By contributing you agree that
