@@ -43,4 +43,5 @@ cat > .env <<ENV
 # file to have it derived again.
 APP_PORT=$((8080 + offset))
 CLIENT_PORT=$((5173 + offset))
+DB_PORT=$((5432 + offset))
 ENV

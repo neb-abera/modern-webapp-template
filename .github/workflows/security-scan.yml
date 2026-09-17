@@ -87,7 +87,10 @@ jobs:
       - name: build and start the production container
         run: |
           docker build -t scan-target .
-          docker run -d --rm --name app -p 127.0.0.1:8080:8080 scan-target
+          # The production image refuses to start without the host names it
+          # answers to; ZAP reaches it as localhost.
+          docker run -d --rm --name app -p 127.0.0.1:8080:8080 \
+            -e HostAllowlist__Hosts=localhost scan-target
           for _ in $(seq 1 30); do
             if curl -sf http://localhost:8080/healthz > /dev/null; then break; fi
             sleep 1

@@ -23,7 +23,10 @@
     "rules": {
       "preset": "recommended",
       "a11y": "on",
-      "security": "on"
+      "security": "on",
+      "correctness": {
+        "useImageSize": "error"
+      }
     }
   },
   "assist": {

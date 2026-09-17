@@ -1,8 +1,10 @@
 # Deploy to Azure Container Apps. Inert until renamed to deploy.yml; the
 # one-time Azure setup it depends on is documented in docs/deploying.md.
 #
-# Repository variables: ACR_LOGIN_SERVER, CONTAINER_APP_NAME, AZURE_RESOURCE_GROUP
-# Repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# Repository variables: ACR_LOGIN_SERVER, CONTAINER_APP_NAME, AZURE_RESOURCE_GROUP,
+#                       ALLOWED_HOSTS (required), TRUSTED_HOPS (default 0)
+# Repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#                       MIGRATOR_CONNECTION_STRING (once there is a database)
 name: deploy
 
 # Only from the default branch, and only once CI has passed on it. Nothing
@@ -72,16 +74,47 @@ jobs:
           docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
           docker push "$REGISTRY/$IMAGE:latest"
 
+      # Schema changes are their own step, as the migrator role, before the
+      # new revision exists: the serving app never holds a connection string
+      # that can ALTER or DROP (docs/deploying.md, "Databases"). A failure
+      # here stops the deploy with the old revision still serving. Skips until
+      # the secret exists, so it is safe before there is a database.
+      - name: Apply database migrations
+        env:
+          IMAGE: ${{ github.event.repository.name }}
+          MIGRATOR_CONNECTION_STRING: ${{ secrets.MIGRATOR_CONNECTION_STRING }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MIGRATOR_CONNECTION_STRING" ]; then
+            echo "::notice::MIGRATOR_CONNECTION_STRING not set; no migrations applied."
+            exit 0
+          fi
+          docker run --rm -e "ConnectionStrings__Default=$MIGRATOR_CONNECTION_STRING" \
+            "$REGISTRY/$IMAGE:${{ github.sha }}" --migrate
+
       # Deploy the immutable tag: a revision names exactly what it runs, and
       # rollback is redeploying a previous SHA.
+      #
+      # The two settings only the deployer knows travel with the revision
+      # (docs/deploying.md): the host names the app answers to, comma-separated
+      # — it serves 400 to anything else, and refuses to start on an empty
+      # list, so a missing variable stops here rather than in front of
+      # visitors — and how many proxies stand in front of it, which decides
+      # whose address the rate limiter sees. /healthz is exempt from the host
+      # check, so platform probes and the health gate below need no entry.
       - name: Deploy the revision
         env:
           IMAGE: ${{ github.event.repository.name }}
+          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          TRUSTED_HOPS: ${{ vars.TRUSTED_HOPS || '0' }}
         run: |
+          set -euo pipefail
+          : "${ALLOWED_HOSTS:?set the ALLOWED_HOSTS repository variable, e.g. www.example.com,example.com}"
           az containerapp update \
             --name "$CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY/$IMAGE:${{ github.sha }}"
+            --image "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --set-env-vars "HostAllowlist__Hosts=$ALLOWED_HOSTS" "ForwardedHeaders__TrustedHops=$TRUSTED_HOPS"
 
       # `az containerapp update` returns once the revision is created, not
       # once it is serving. Without this a broken deploy looks green.

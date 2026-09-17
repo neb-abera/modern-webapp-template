@@ -47,6 +47,23 @@ public sealed class PrerenderedPagesTests
     }
 }
 
+// A wwwroot shaped like the client build's output: a prerendered home page, a
+// prerendered route, the empty shell and one hashed asset.
+internal static class FixtureWebRoot
+{
+    public static string Create()
+    {
+        var webRoot = Directory.CreateTempSubdirectory("wwwroot-fixture").FullName;
+        Directory.CreateDirectory(Path.Combine(webRoot, "about"));
+        Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
+        File.WriteAllText(Path.Combine(webRoot, "index.html"), "<html>prerendered home</html>");
+        File.WriteAllText(Path.Combine(webRoot, "spa.html"), "<html>empty shell</html>");
+        File.WriteAllText(Path.Combine(webRoot, "about", "index.html"), "<html>prerendered about</html>");
+        File.WriteAllText(Path.Combine(webRoot, "assets", "index-abc123.js"), "console.log('app')");
+        return webRoot;
+    }
+}
+
 // The pipeline, exercised end to end against a fixture wwwroot. This exists
 // because of a production incident on aberaTech: with WebApplication's
 // implicit routing at the front of the pipeline, the SPA fallback endpoint
@@ -60,13 +77,7 @@ public sealed class PrerenderPipelineTests : IDisposable
 
     public PrerenderPipelineTests()
     {
-        webRoot = Directory.CreateTempSubdirectory("wwwroot-fixture").FullName;
-        Directory.CreateDirectory(Path.Combine(webRoot, "about"));
-        Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
-        File.WriteAllText(Path.Combine(webRoot, "index.html"), "<html>prerendered home</html>");
-        File.WriteAllText(Path.Combine(webRoot, "spa.html"), "<html>empty shell</html>");
-        File.WriteAllText(Path.Combine(webRoot, "about", "index.html"), "<html>prerendered about</html>");
-        File.WriteAllText(Path.Combine(webRoot, "assets", "index-abc123.js"), "console.log('app')");
+        webRoot = FixtureWebRoot.Create();
 
         factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.UseWebRoot(webRoot));
@@ -133,5 +144,25 @@ public sealed class PrerenderPipelineTests : IDisposable
         var response = await client.GetAsync("/assets/index-abc123.js", TestContext.Current.CancellationToken);
 
         Assert.Equal("public, max-age=31536000, immutable", response.Headers.CacheControl?.ToString());
+    }
+
+    // Static responses are the same for every visitor, and a Set-Cookie makes
+    // them per-visitor: uncacheable at the edge, and echoed back on every
+    // asset request. Session, antiforgery and authentication cookies mount
+    // under /api only (docs/performance.md); this fails the day one of them
+    // is added to the whole pipeline.
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/about")]
+    [InlineData("/dashboard")]
+    [InlineData("/assets/index-abc123.js")]
+    public async Task StaticResponsesSetNoCookies(string path)
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"), $"{path} sets a cookie");
     }
 }

@@ -1,0 +1,8 @@
+# Response fields that are named like personal or secret data and are returned
+# ON PURPOSE. scripts/check-response-pii.sh (part of `make verify`) fails on
+# any such field in server/Api/openapi.json that is not listed here.
+#
+# One per line: <Schema>.<property>  <why a client needs it>
+# A line without a reason fails; so does a line no response uses any more.
+#
+#   Profile.email  the signed-in user's own address, shown on their settings page
