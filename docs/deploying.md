@@ -54,6 +54,24 @@ it was learned the hard way; keep them if you adapt it to another host.
    to *Zone → Cache Purge* only) and skips with a warning until they exist —
    so it is safe before Cloudflare is configured and correct after.
 
+## Settings the app is deployed with
+
+`server/Api/appsettings.json` is the list of deliberate values, and each is
+overridden per environment with an environment variable (`:` becomes `__`).
+
+| Variable | Default | Set it to |
+| --- | --- | --- |
+| `AllowedHosts` | `localhost` | **Required in production:** the hostnames the app serves, semicolon-separated — `www.example.com;example.com`. Any other `Host` header gets 400. Include the hostname the post-deploy health gate polls. An empty value refuses to start (the framework would read it as "every host"). |
+| `ForwardedHeaders__TrustedHops` | `0` | The number of proxies in front of the app — next section. |
+| `Kestrel__Limits__MaxRequestBodySize` | `1048576` | Leave it. An endpoint that takes uploads raises its own limit with `RequestSizeLimitAttribute` metadata; raising this raises it for every endpoint. |
+| `RATE_LIMIT_PERMIT` | `100` | Requests per client per 10 s, on endpoints only — static files and `/healthz` are not counted. |
+| `Logging__LogLevel__<category>` | see file | `Microsoft.AspNetCore.Authentication` and `.Authorization` stay at `Information`: that is the level the framework logs refused sign-ins and authorization failures at, and the usual `Microsoft.AspNetCore: Warning` hides them. |
+
+Platform health probes usually call the container by IP address, which is not
+an allowed host. Give the probe a `Host: localhost` header (Azure Container
+Apps and Kubernetes: `httpGet.httpHeaders`) rather than widening
+`AllowedHosts`. The image's own `HEALTHCHECK` already probes `localhost`.
+
 ## Behind a proxy: whose address is it?
 
 The rate limiter gives each client its own bucket, and the security log names
@@ -87,10 +105,9 @@ counted and their forged entry lands exactly where the app looks. If you cannot
 lock the origin, set `KnownNetworks` — a forged chain from an unlisted peer is
 then refused rather than believed.
 
-```bash
-az containerapp update --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
-  --set-env-vars ForwardedHeaders__TrustedHops=2
-```
+`deploy.yml.example` sets both from repository variables on every deploy:
+`ALLOWED_HOSTS` (required — the deploy stops if it is unset) and
+`TRUSTED_HOPS` (`0` when unset).
 
 IPv6 clients are bucketed per /64, the unit an ISP hands one subscriber.
 

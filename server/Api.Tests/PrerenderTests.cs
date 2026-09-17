@@ -47,6 +47,23 @@ public sealed class PrerenderedPagesTests
     }
 }
 
+// A wwwroot shaped like the client build's output: a prerendered home page, a
+// prerendered route, the empty shell and one hashed asset.
+internal static class FixtureWebRoot
+{
+    public static string Create()
+    {
+        var webRoot = Directory.CreateTempSubdirectory("wwwroot-fixture").FullName;
+        Directory.CreateDirectory(Path.Combine(webRoot, "about"));
+        Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
+        File.WriteAllText(Path.Combine(webRoot, "index.html"), "<html>prerendered home</html>");
+        File.WriteAllText(Path.Combine(webRoot, "spa.html"), "<html>empty shell</html>");
+        File.WriteAllText(Path.Combine(webRoot, "about", "index.html"), "<html>prerendered about</html>");
+        File.WriteAllText(Path.Combine(webRoot, "assets", "index-abc123.js"), "console.log('app')");
+        return webRoot;
+    }
+}
+
 // The pipeline, exercised end to end against a fixture wwwroot. This exists
 // because of a production incident on aberaTech: with WebApplication's
 // implicit routing at the front of the pipeline, the SPA fallback endpoint
@@ -60,13 +77,7 @@ public sealed class PrerenderPipelineTests : IDisposable
 
     public PrerenderPipelineTests()
     {
-        webRoot = Directory.CreateTempSubdirectory("wwwroot-fixture").FullName;
-        Directory.CreateDirectory(Path.Combine(webRoot, "about"));
-        Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
-        File.WriteAllText(Path.Combine(webRoot, "index.html"), "<html>prerendered home</html>");
-        File.WriteAllText(Path.Combine(webRoot, "spa.html"), "<html>empty shell</html>");
-        File.WriteAllText(Path.Combine(webRoot, "about", "index.html"), "<html>prerendered about</html>");
-        File.WriteAllText(Path.Combine(webRoot, "assets", "index-abc123.js"), "console.log('app')");
+        webRoot = FixtureWebRoot.Create();
 
         factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.UseWebRoot(webRoot));

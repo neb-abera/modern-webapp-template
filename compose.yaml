@@ -15,6 +15,14 @@ services:
       target: runtime
     ports:
       - "${APP_PORT:-8080}:8080"
+    # The deliberate values live in server/Api/appsettings.json; any of them
+    # can be overridden here the way production overrides them, as environment
+    # variables (docs/deploying.md lists them). Only one differs from the file:
+    # the app answers 400 to a Host it was not told about, and on the compose
+    # network it is reached as `app` (k6) and `app-under-test` (e2e) as well as
+    # localhost (`make run`, the image HEALTHCHECK).
+    environment:
+      AllowedHosts: ${ALLOWED_HOSTS:-localhost;app;app-under-test}
     # SIGTERM -> SIGKILL window on stop and redeploy. This is Docker's
     # default, written down because the app depends on it: the server's
     # shutdown timeout is 8s (HostOptions in Program.cs, pinned by a test)

@@ -4,6 +4,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Net.Http.Headers;
 
 // Healthcheck mode: the chiseled runtime image has no shell or curl, so the
@@ -35,6 +36,28 @@ var builder = WebApplication.CreateBuilder(args);
 // 8s finishes inside Docker's 10s window (and well inside Azure Container
 // Apps' 30s terminationGracePeriodSeconds) with margin for process exit.
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(8));
+
+// appsettings.json holds the deliberate values; every one of them can be
+// overridden per environment (AllowedHosts=..., Kestrel__Limits__..., see
+// docs/deploying.md). Two need a hand to take effect:
+//
+// AllowedHosts is read by the framework's host filtering, which answers 400 to
+// any other Host header — and which treats an EMPTY value as "allow everything".
+// An unset variable interpolated into a deploy command is how that happens, so
+// an empty list refuses to start instead of failing open.
+if (string.IsNullOrWhiteSpace(builder.Configuration["AllowedHosts"]))
+{
+    throw new InvalidOperationException(
+        "AllowedHosts is empty, which the framework reads as \"allow every host\". "
+        + "Set it to the hostnames this app serves (semicolon-separated); see docs/deploying.md.");
+}
+
+// Kestrel reads its endpoints from configuration on its own, but not its
+// limits. The one that matters is Limits:MaxRequestBodySize: the framework
+// default is 28.6 MB on every endpoint, which nothing here needs. The file sets
+// 1 MB; an endpoint that takes uploads raises its own ceiling and no one
+// else's: .WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024)).
+builder.Services.Configure<KestrelServerOptions>(builder.Configuration.GetSection("Kestrel"));
 
 builder.Services.AddProblemDetails();
 
@@ -113,7 +136,6 @@ app.Use(async (context, next) =>
 });
 
 app.UseResponseCompression();
-app.UseRateLimiter();
 
 // The production image serves the built client from wwwroot. Vite
 // content-hashes everything under /assets, so those files can be cached
@@ -159,12 +181,22 @@ app.UseStaticFiles(staticFiles);
 // they differed (prerendered pages all served the empty shell).
 app.UseRouting();
 
+// After routing and after the static files, both on purpose. Static files
+// never reach this line, so a page load — the document plus every asset on
+// it — spends none of the visitor's permits; those are for requests that make
+// the server do work. And with routing done, an endpoint can opt out by name
+// (DisableRateLimiting, below). Everything else is limited without asking:
+// a new endpoint is covered the moment it is mapped.
+app.UseRateLimiter();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.MapHealthChecks("/healthz");
+// Probes arrive on a schedule from one address; a limited health endpoint
+// turns a traffic spike into a restart.
+app.MapHealthChecks("/healthz").DisableRateLimiting();
 
 // TypedResults, not Results: the typed return value is what puts Greeting's
 // schema into the OpenAPI document that the build emits (openapi.json) and
@@ -176,7 +208,9 @@ app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API"
 // markup, and a client-rendered route served over it would flash the wrong
 // page and then hydrate against DOM that contradicts it. spa.html is the
 // same shell with the root div left empty.
-app.MapFallbackToFile("spa.html", staticFiles);
+// It is a static file that happens to be served by an endpoint, so it is
+// unlimited like the rest of them.
+app.MapFallbackToFile("spa.html", staticFiles).DisableRateLimiting();
 
 // RunAsync, not Run: the --healthcheck branch above makes the entry point
 // async, and CA1849 rightly refuses a synchronous block inside it.
