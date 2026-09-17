@@ -13,7 +13,8 @@
 #      generated client types (client/src/api-types.d.ts) match the code
 #   5. the production image builds
 #   6. smoke: the running container serves client, API, health, security
-#      headers — and runs as a non-root user
+#      headers, refuses a Host it was not configured for — and runs as a
+#      non-root user
 #   7. end-to-end: Playwright against the production container
 #   8. mutation canary: a planted server bug must fail the tests
 #
@@ -260,17 +261,23 @@ fi
 banner "Smoke: production container serves client, API and health, as non-root"
 docker network create "$NET" > /dev/null 2>&1
 docker rm -f "$APP" > /dev/null 2>&1
+# The app answers only to the hosts it is told about (appsettings.json:
+# localhost). The e2e container reaches it by container name, so that name is
+# added the way a deployment adds its domain; the last probe below proves a
+# Host nobody configured is refused.
 # Non-root proof: the image's configured user must be a non-zero numeric
 # uid (the Dockerfile sets USER \$APP_UID, 1654 in the chiseled base). The
 # chiseled runtime has no shell to run `id` in, so the image config is the
 # assertion surface; empty (root default), "root" and "0" all fail this.
 if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
-   && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" "$IMAGE" > /dev/null \
+   && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" \
+        -e "AllowedHosts=localhost;$APP" "$IMAGE" > /dev/null \
    && for _ in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
    && curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null \
    && curl -fsS "http://localhost:$SMOKE_PORT/" | grep -q '<div id="root">' \
    && curl -fsS "http://localhost:$SMOKE_PORT/api/hello" | grep -q '"message":"Hello from the API"' \
-   && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff'; then
+   && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff' \
+   && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ]; then
   pass "Container serves the client, API, health and security headers as non-root"
 else
   docker logs "$APP" 2>&1 | tail -40

@@ -54,8 +54,15 @@ admin of the repo.
   Without the secrets the purge job warns and skips; with the cache rule but
   no purge, deploys serve stale pages for up to the rule's TTL.
 
-- **Tell the app how many proxies are in front of it.** Set
-  `ForwardedHeaders__TrustedHops` on the container (`2` for Cloudflare +
+- **Tell the app its hostnames.** Set the `ALLOWED_HOSTS` repository variable
+  (the deploy passes it to the container as `AllowedHosts`) to the
+  domains it serves (`www.example.com;example.com`, plus whatever hostname the
+  deploy health gate polls). The default is `localhost`, so a deployment that
+  skips this answers 400 to every visitor — loudly, on the first deploy,
+  which is the point. Manual because only you know your domain.
+- **Tell the app how many proxies are in front of it.** Set the
+  `TRUSTED_HOPS` repository variable (`ForwardedHeaders__TrustedHops` on the
+  container; `2` for Cloudflare +
   cloud ingress, `1` for an ingress alone) and lock the origin to the CDN's
   ranges. Left at the default `0` behind a proxy, every visitor shares one
   rate-limit bucket. Manual because only you know your topology;

@@ -1,7 +1,8 @@
 # Deploy to Azure Container Apps. Inert until renamed to deploy.yml; the
 # one-time Azure setup it depends on is documented in docs/deploying.md.
 #
-# Repository variables: ACR_LOGIN_SERVER, CONTAINER_APP_NAME, AZURE_RESOURCE_GROUP
+# Repository variables: ACR_LOGIN_SERVER, CONTAINER_APP_NAME, AZURE_RESOURCE_GROUP,
+#                       ALLOWED_HOSTS (required), TRUSTED_HOPS (default 0)
 # Repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 name: deploy
 
@@ -74,14 +75,27 @@ jobs:
 
       # Deploy the immutable tag: a revision names exactly what it runs, and
       # rollback is redeploying a previous SHA.
+      #
+      # The two settings only the deployer knows travel with the revision
+      # (docs/deploying.md): the hostnames the app answers to — it serves 400
+      # to anything else, and refuses to start on an empty list, so a missing
+      # variable stops here rather than in front of visitors — and how many
+      # proxies stand in front of it, which decides whose address the rate
+      # limiter sees. ALLOWED_HOSTS must include the host the health gate
+      # below polls.
       - name: Deploy the revision
         env:
           IMAGE: ${{ github.event.repository.name }}
+          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          TRUSTED_HOPS: ${{ vars.TRUSTED_HOPS || '0' }}
         run: |
+          set -euo pipefail
+          : "${ALLOWED_HOSTS:?set the ALLOWED_HOSTS repository variable, e.g. www.example.com;example.com}"
           az containerapp update \
             --name "$CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY/$IMAGE:${{ github.sha }}"
+            --image "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --set-env-vars "AllowedHosts=$ALLOWED_HOSTS" "ForwardedHeaders__TrustedHops=$TRUSTED_HOPS"
 
       # `az containerapp update` returns once the revision is created, not
       # once it is serving. Without this a broken deploy looks green.
