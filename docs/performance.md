@@ -45,3 +45,31 @@ So those mount **under `/api` only**: scope them with
 (or a route group), and never call them above `UseStaticFiles`. A server test
 (`StaticResponsesSetNoCookies`) and an e2e test (`the document and hashed
 assets set no cookies`) fail the day a static response sets one.
+
+
+## Images
+
+The template's one image (`client/src/App.tsx`) carries the conventions, and
+the lint enforces the first of them:
+
+- **`width` and `height` on every `<img>`** — Biome's
+  `correctness/useImageSize` fails `npm run lint` without them, and
+  `client/tests/image-rule.test.ts` proves the rule is really on. The browser
+  reserves the box before the file arrives, so the page does not jump
+  (cumulative layout shift). CSS may still resize it; the attributes give the
+  aspect ratio.
+- **`decoding="async"`** always.
+- By position, one of: nothing for a small image above the fold;
+  **`loading="lazy"`** for anything below it; **`fetchPriority="high"`** for
+  the single largest image of the first screen — never together with `lazy`.
+- Imported images are emitted under `/assets` with a content hash (immutable
+  caching applies) and are **never inlined as `data:` URIs**
+  (`assetsInlineLimit: 0` in `vite.config.ts`): the Content-Security-Policy
+  refuses `data:` images, so an inlined icon would build and then not render.
+- **`preconnect` only to an origin the first screen really needs**, and only
+  once there is one: `<link rel="preconnect" href="https://images.example.com" crossorigin>`
+  in `client/index.html`'s `<head>`, for a host that is also in
+  `UrlAllowlist__Hosts` (which is what puts it in the CSP's `img-src`). Each
+  preconnect costs a TLS handshake on every visit; one for an origin used
+  below the fold is a net loss. The template has no external origin, so
+  `index.html` has none.

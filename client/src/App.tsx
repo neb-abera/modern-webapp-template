@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { paths } from "./api-types";
+import mark from "./assets/mark.svg";
 
 // The API contract, not a hand-written mirror of it: api-types.d.ts is
 // generated (npm run generate:api-types) from the OpenAPI document the
@@ -33,6 +34,16 @@ export function App() {
 
   return (
     <main>
+      {/*
+        The image conventions, on the one image the template has. width and
+        height always (Biome's useImageSize fails the lint without them): the
+        browser reserves the box before the file arrives, so nothing jumps.
+        decoding="async" always. Then one of three, by position: nothing for
+        a small image above the fold, like this one; loading="lazy" for
+        anything below it; fetchPriority="high" for the single largest image
+        of the first screen, and never together with lazy.
+      */}
+      <img src={mark} alt="" width={48} height={48} decoding="async" />
       <h1>Modern Web App</h1>
       {error ? (
         <p role="alert">Could not reach the API: {error}</p>
