@@ -17,12 +17,13 @@ services:
       - "${APP_PORT:-8080}:8080"
     # The deliberate values live in server/Api/appsettings.json; any of them
     # can be overridden here the way production overrides them, as environment
-    # variables (docs/deploying.md lists them). Only one differs from the file:
-    # the app answers 400 to a Host it was not told about, and on the compose
+    # variables (docs/deploying.md lists them). One has no usable default: this
+    # is the production image, which refuses to start without the host names it
+    # answers to (any other Host is a 400; /healthz is exempt). On the compose
     # network it is reached as `app` (k6) and `app-under-test` (e2e) as well as
-    # localhost (`make run`, the image HEALTHCHECK).
+    # localhost (`make run`).
     environment:
-      AllowedHosts: ${ALLOWED_HOSTS:-localhost;app;app-under-test}
+      HostAllowlist__Hosts: ${ALLOWED_HOSTS:-localhost,app,app-under-test}
     # SIGTERM -> SIGKILL window on stop and redeploy. This is Docker's
     # default, written down because the app depends on it: the server's
     # shutdown timeout is 8s (HostOptions in Program.cs, pinned by a test)

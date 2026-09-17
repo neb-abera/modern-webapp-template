@@ -96,12 +96,12 @@ jobs:
       # rollback is redeploying a previous SHA.
       #
       # The two settings only the deployer knows travel with the revision
-      # (docs/deploying.md): the hostnames the app answers to — it serves 400
-      # to anything else, and refuses to start on an empty list, so a missing
-      # variable stops here rather than in front of visitors — and how many
-      # proxies stand in front of it, which decides whose address the rate
-      # limiter sees. ALLOWED_HOSTS must include the host the health gate
-      # below polls.
+      # (docs/deploying.md): the host names the app answers to, comma-separated
+      # — it serves 400 to anything else, and refuses to start on an empty
+      # list, so a missing variable stops here rather than in front of
+      # visitors — and how many proxies stand in front of it, which decides
+      # whose address the rate limiter sees. /healthz is exempt from the host
+      # check, so platform probes and the health gate below need no entry.
       - name: Deploy the revision
         env:
           IMAGE: ${{ github.event.repository.name }}
@@ -109,12 +109,12 @@ jobs:
           TRUSTED_HOPS: ${{ vars.TRUSTED_HOPS || '0' }}
         run: |
           set -euo pipefail
-          : "${ALLOWED_HOSTS:?set the ALLOWED_HOSTS repository variable, e.g. www.example.com;example.com}"
+          : "${ALLOWED_HOSTS:?set the ALLOWED_HOSTS repository variable, e.g. www.example.com,example.com}"
           az containerapp update \
             --name "$CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
             --image "$REGISTRY/$IMAGE:${{ github.sha }}" \
-            --set-env-vars "AllowedHosts=$ALLOWED_HOSTS" "ForwardedHeaders__TrustedHops=$TRUSTED_HOPS"
+            --set-env-vars "HostAllowlist__Hosts=$ALLOWED_HOSTS" "ForwardedHeaders__TrustedHops=$TRUSTED_HOPS"
 
       # `az containerapp update` returns once the revision is created, not
       # once it is serving. Without this a broken deploy looks green.

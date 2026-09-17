@@ -19,7 +19,7 @@ if (args.Contains("--healthcheck"))
     using var healthClient = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
     try
     {
-        using var healthResponse = await healthClient.GetAsync(new Uri($"http://localhost:{port}/healthz")).ConfigureAwait(false);
+        using var healthResponse = await healthClient.GetAsync(new Uri($"http://localhost:{port}{HealthRoute.Path}")).ConfigureAwait(false);
         return healthResponse.IsSuccessStatusCode ? 0 : 1;
     }
     catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
@@ -39,20 +39,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(8));
 
 // appsettings.json holds the deliberate values; every one of them can be
-// overridden per environment (AllowedHosts=..., Kestrel__Limits__..., see
-// docs/deploying.md). Two need a hand to take effect:
+// overridden per environment (HostAllowlist__Hosts=..., Kestrel__Limits__...,
+// see docs/deploying.md).
 //
-// AllowedHosts is read by the framework's host filtering, which answers 400 to
-// any other Host header — and which treats an EMPTY value as "allow everything".
-// An unset variable interpolated into a deploy command is how that happens, so
-// an empty list refuses to start instead of failing open.
-if (string.IsNullOrWhiteSpace(builder.Configuration["AllowedHosts"]))
-{
-    throw new InvalidOperationException(
-        "AllowedHosts is empty, which the framework reads as \"allow every host\". "
-        + "Set it to the hostnames this app serves (semicolon-separated); see docs/deploying.md.");
-}
-
 // Kestrel reads its endpoints from configuration on its own, but not its
 // limits. The one that matters is Limits:MaxRequestBodySize: the framework
 // default is 28.6 MB on every endpoint, which nothing here needs. The file sets
@@ -156,6 +145,11 @@ if (Migrations.OnBoot(app.Configuration))
 // rate limiter, the logs — must see the resolved client, never the proxy.
 app.UseForwardedHeaders();
 
+// Second: only the configured Host names are answered, except on the health
+// route, which platform probes reach by pod IP. See HostAllowlist.cs — and
+// note it refuses to start outside Development when no host is configured.
+app.UseHostAllowlist(HealthRoute.Path);
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -246,7 +240,7 @@ if (app.Environment.IsDevelopment())
 
 // Probes arrive on a schedule from one address; a limited health endpoint
 // turns a traffic spike into a restart.
-app.MapHealthChecks("/healthz").DisableRateLimiting().AllowAnonymous();
+app.MapHealthChecks(HealthRoute.Path).DisableRateLimiting().AllowAnonymous();
 
 // TypedResults, not Results: the typed return value is what puts Greeting's
 // schema into the OpenAPI document that the build emits (openapi.json) and
@@ -269,6 +263,15 @@ await app.RunAsync().ConfigureAwait(false);
 return 0;
 
 internal sealed record Greeting(string Message);
+
+// One name for the health route: where it is mapped, what the container's own
+// healthcheck probes, and what the host allowlist lets through. The template
+// has no separate readiness route; if one is added, it goes here and into
+// UseHostAllowlist above.
+internal static class HealthRoute
+{
+    public const string Path = "/healthz";
+}
 
 // Expose the entry point to the test project's WebApplicationFactory; it
 // must stay public for that, which CA1515 cannot know.

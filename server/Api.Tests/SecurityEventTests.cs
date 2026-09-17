@@ -111,6 +111,7 @@ public sealed class SecurityEventTests : IDisposable
         SecurityEvents.AntiforgeryRejected(logger, "POST", "/r", "c");
         SecurityEvents.SignInRefused(logger, SignInRefusal.BadCredentials, "c");
         SecurityEvents.WebhookSignatureRejected(logger, "/r", "c");
+        SecurityEvents.HostRejected(logger, "GET", "api", "c");
 
         Assert.Equal(
             [
@@ -120,6 +121,7 @@ public sealed class SecurityEventTests : IDisposable
                 (1004, "AntiforgeryRejected"),
                 (1005, "SignInRefused"),
                 (1006, "WebhookSignatureRejected"),
+                (1007, "HostRejected"),
             ],
             provider.Entries.Select(entry => (entry.Id.Id, entry.Id.Name!)));
         Assert.All(provider.Entries, entry => Assert.Equal(LogLevel.Warning, entry.Level));

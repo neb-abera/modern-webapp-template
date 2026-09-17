@@ -68,8 +68,9 @@ Docker, gated by a test-driven verification suite, and secured by default.
   address behind a configured number of trusted proxies, with static files
   and `/healthz` left uncounted; authorization required by default, before
   any sign-in exists, with a test that fails on an endpoint that does not
-  declare who may call it; a settings file with deliberate values (only
-  configured hosts are answered, 1 MB request bodies); a security event log
+  declare who may call it; a host allowlist that answers only configured host
+  names (health route excepted, and no start outside Development without
+  one) and a settings file with deliberate values (1 MB request bodies); a security event log
   with stable ids that never carries headers, bodies or PII; small tested
   helpers (`UrlAllowlist`, `WebhookSignature`) so the first stored URL or
   webhook is not hand-rolled; non-root containers, CodeQL (C#, TypeScript,

@@ -55,11 +55,12 @@ admin of the repo.
   no purge, deploys serve stale pages for up to the rule's TTL.
 
 - **Tell the app its hostnames.** Set the `ALLOWED_HOSTS` repository variable
-  (the deploy passes it to the container as `AllowedHosts`) to the
-  domains it serves (`www.example.com;example.com`, plus whatever hostname the
-  deploy health gate polls). The default is `localhost`, so a deployment that
-  skips this answers 400 to every visitor — loudly, on the first deploy,
-  which is the point. Manual because only you know your domain.
+  (the deploy passes it to the container as `HostAllowlist__Hosts`) to the
+  domains it serves, comma-separated: `www.example.com,example.com`, or
+  `*.example.io` for any subdomain. Outside Development the app refuses to
+  start without it, so a deployment that skips this fails its first deploy
+  instead of answering every Host header. Health probes need no entry:
+  `/healthz` is exempt. Manual because only you know your domain.
 - **Tell the app how many proxies are in front of it.** Set the
   `TRUSTED_HOPS` repository variable (`ForwardedHeaders__TrustedHops` on the
   container; `2` for Cloudflare +
