@@ -15,8 +15,10 @@ make contract # after changing an API shape: regenerate openapi.json and the cli
 ```
 
 `make verify` is the merge gate run locally: server build and unit tests,
-client typecheck/lint/tests, a production image build, a smoke test of the
-running container, the Playwright end-to-end suite, and a mutation canary.
+client typecheck/lint/tests, the API contract and response-DTO checks, the
+database runtime-role check, a production image build and its byte budget, a
+smoke test of the running container, the Playwright end-to-end suite, and a
+mutation canary.
 If it is green on your machine, CI will agree — both run the same
 containers.
 
