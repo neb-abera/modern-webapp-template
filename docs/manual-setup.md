@@ -142,6 +142,32 @@ that. What is left is judgment, so it is manual:
   pass filters by owner in the database (`WHERE id = @id AND owner_id =
   @user`), not after loading. `TestIdentity` signs a test user in with a
   header and exists only in the test host.
+- **Cookie defaults, all of them, on the first cookie.**
+
+  ```csharp
+  .AddCookie(options =>
+  {
+      options.Cookie.Name = "__Host-session";   // the prefix makes the browser enforce Secure, Path=/, no Domain
+      options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+      options.Cookie.HttpOnly = true;
+      options.Cookie.SameSite = SameSiteMode.Lax; // Strict if nothing links into a signed-in page
+  });
+  ```
+
+  The same four for the antiforgery cookie (`AddAntiforgery(o => o.Cookie...)`,
+  name `__Host-antiforgery`). Behind a TLS-terminating proxy the app sees
+  `http`; `ForwardedHeaders__TrustedHops` (step 3) is what makes `Secure`
+  cookies and HTTPS redirects work there. Mount the cookie-issuing middleware
+  under `/api` only — static responses must stay cookie-free
+  ([performance.md](performance.md#static-responses-carry-no-cookies); a test
+  enforces it).
+- **Persist the Data Protection key ring, and let it rotate.** Cookies and
+  antiforgery tokens are encrypted with keys that default to the container's
+  filesystem: every deploy signs everyone out, and two replicas cannot read
+  each other's cookies. Persist to shared storage and protect at rest
+  (`PersistKeysToAzureBlobStorage(...).ProtectKeysWithAzureKeyVault(...)`, or
+  `PersistKeysToDbContext`), call `SetApplicationName` so revisions share
+  keys, and leave the 90-day rotation on — never pin a single key.
 - **Call the named security events** (`server/Api/SecurityEvents.cs`,
   table in [SECURITY.md](../SECURITY.md)): `SignInRefused` wherever a sign-in
   attempt is turned away — with the enum reason, never the attempted user
@@ -208,3 +234,45 @@ person:
 - **Review migrations for indexes** — the pull request template has the
   checklist: an index for each `WHERE` + `ORDER BY` pair, and one for the
   second column of a composite key when it is filtered alone.
+
+## 9. The first upload, webhook or stored URL
+
+Three helpers exist so these are not hand-rolled on a deadline; each is a few
+dozen lines with its failure cases already tested.
+
+- **A URL a user gives you to store or show** goes through
+  `UrlAllowlist.Allows(url)` (`server/Api/UrlAllowlist.cs`): https only, exact
+  allowlisted host, default port, no `user@`. Hosts come from
+  `UrlAllowlist__Hosts__0`, `…__1`; the same list is appended to the
+  Content-Security-Policy as `img-src`, so what is storable is what the
+  browser will load. Two things it cannot do for you: the app sends
+  `Cross-Origin-Embedder-Policy: require-corp`, so an external image host must
+  send `Cross-Origin-Resource-Policy: cross-origin` (or the `<img>` needs
+  `crossorigin` and the host CORS); and if the *server* ever fetches a stored
+  URL, resolve and check the address too — an allowlisted name can point at
+  an internal IP.
+- **A webhook** reads the raw body and verifies before parsing:
+
+  ```csharp
+  app.MapPost("/api/webhooks/payments", async (HttpContext context, IConfiguration configuration) =>
+  {
+      using var raw = new MemoryStream();
+      await context.Request.Body.CopyToAsync(raw);
+      var secret = Encoding.UTF8.GetBytes(configuration["Webhooks:PaymentsSecret"] ?? "");
+      if (!WebhookSignature.IsValid(secret, raw.ToArray(), context.Request.Headers["X-Signature"]))
+      {
+          SecurityEvents.WebhookSignatureRejected(SecurityEvents.Logger(context), SecurityEvents.Route(context), SecurityEvents.Client(context));
+          return Results.Unauthorized();
+      }
+      // parse raw, then act — idempotently: senders retry.
+      return Results.Ok();
+  }).AllowAnonymous(); // the signature is the authentication
+  ```
+
+  `WebhookSignature` compares in constant time and treats a missing secret as
+  "nothing verifies". The 1 MB body limit already applies.
+- **An upload endpoint** raises its own body limit and nobody else's
+  (`.WithMetadata(new RequestSizeLimitAttribute(20 * 1024 * 1024))`), checks
+  the content by its bytes rather than its file name, stores outside
+  `wwwroot`, and serves it back with `Content-Disposition: attachment` unless
+  it is an image type you re-encoded.
