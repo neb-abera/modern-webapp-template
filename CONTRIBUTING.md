@@ -29,6 +29,14 @@ request or response shape, run `make contract` and commit both files.
 * Write tests first, from the entry point a user actually hits (an HTTP
   request, a page interaction), not from internals outward. A change in
   behavior needs a test that fails without it.
+* A response is a record that lists its fields; never return an entity. An
+  entity serializes every column the table ever grows — the email, the
+  password hash, the reset token — to whoever asks. `make verify` reads the
+  response schemas in `server/Api/openapi.json` and fails on a field named
+  like personal or secret data (email, phone, address, zip/postcode, dob,
+  ssn, password, token, secret). If clients really need one, list it in
+  `server/Api/openapi-pii-allowlist.txt` with the reason; a line without a
+  reason fails too.
 * Keep pull requests small and single-purpose, and fill in the pull request
   template.
 * Nothing merges on a red check. Branch protection requires every PR-gating
