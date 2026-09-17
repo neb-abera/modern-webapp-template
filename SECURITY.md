@@ -34,9 +34,11 @@ Projects generated from this template ship with:
   user on every endpoint that does not declare `AllowAnonymous`, a test
   fails on an endpoint that declares nothing, and 401/403 are logged as
   security events — all before any sign-in exists,
-* a settings file with deliberate values: only configured `Host` headers are
-  answered, request bodies over 1 MB are refused, and authorization failures
-  are not filtered out of the log,
+* a host allowlist (`server/Api/HostAllowlist.cs`): only configured `Host`
+  names are answered, `/healthz` excepted so platform probes by pod IP work,
+  and outside Development the app refuses to start with none configured,
+* a settings file with deliberate values: request bodies over 1 MB are
+  refused, and authorization failures are not filtered out of the log,
 * a distroless-style chiseled production image running as a non-root user —
   declared explicitly (`USER $APP_UID` in the Dockerfile) and asserted by
   the verify suite's smoke check, so a base-image change cannot silently
@@ -71,6 +73,7 @@ against the number (`server/Api/SecurityEvents.cs`; a test pins the table).
 | 1004 | `AntiforgeryRejected` | an antiforgery token is missing or invalid | method, route pattern, client address |
 | 1005 | `SignInRefused` | a sign-in attempt is refused | reason (an enum), client address |
 | 1006 | `WebhookSignatureRejected` | a webhook's signature does not verify | route pattern, client address |
+| 1007 | `HostRejected` | a request's `Host` is not in the allowlist (400) | method, area (`api` or `page`), client address — never the refused `Host` value |
 
 An event carries the **route pattern** (`/api/notes/{id}`), never the path
 that matched it or the query string; the **resolved client address**
@@ -79,7 +82,7 @@ that matched it or the query string; the **resolved client address**
 one. It never carries a header, cookie, body, token, email address or name —
 a test sends all of those and asserts none reaches the log.
 
-1001–1003 fire in the template as shipped. 1004–1006 are named slots:
+1001–1003 and 1007 fire in the template as shipped. 1004–1006 are named slots:
 the first code that signs a user in, accepts a webhook or posts a form calls
 the matching method ([docs/manual-setup.md](docs/manual-setup.md) says
 where), so the numbers are already stable when the first alert is written.

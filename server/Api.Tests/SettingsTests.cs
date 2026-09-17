@@ -12,64 +12,14 @@ using Xunit;
 namespace Api.Tests;
 
 // server/Api/appsettings.json, as behaviour. Without that file the framework's
-// defaults apply silently: any Host header is answered, a request body may be
-// 28.6 MB on every endpoint, and the log level hides authorization failures.
+// defaults apply silently: a request body may be 28.6 MB on every endpoint,
+// and the log level hides authorization failures. (Which Host headers are
+// answered is HostAllowlistTests.)
 public sealed class SettingsTests : IDisposable
 {
     private readonly WebApplicationFactory<Program> factory = new();
 
     public void Dispose() => factory.Dispose();
-
-    [Theory]
-    [InlineData("/")]
-    [InlineData("/api/hello")]
-    [InlineData("/healthz")]
-    public async Task AHostThatIsNotAllowedIsRefused(string path)
-    {
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, path);
-        request.Headers.Host = "evil.example";
-
-        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Theory]
-    [InlineData("localhost")] // the image HEALTHCHECK, compose --wait, the verify smoke test
-    [InlineData("localhost:8080")]
-    public async Task TheHealthProbeHostIsAllowedByDefault(string host)
-    {
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz");
-        request.Headers.Host = host;
-
-        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AllowedHostsComesFromConfiguration()
-    {
-        using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("AllowedHosts", "localhost;www.example.com"));
-        using var client = host.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz");
-        request.Headers.Host = "www.example.com";
-
-        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public void AnEmptyAllowedHostsRefusesToStartRatherThanAllowingEveryHost()
-    {
-        using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("AllowedHosts", ""));
-
-        var failure = Assert.ThrowsAny<Exception>(() => host.CreateClient());
-        Assert.Contains("AllowedHosts", failure.ToString(), StringComparison.Ordinal);
-    }
 
     // The body limit is Kestrel's, and TestServer is not Kestrel: this one test
     // starts the real server on a free port. The probe endpoint only reads the
@@ -91,7 +41,6 @@ public sealed class SettingsTests : IDisposable
             {
                 Content = new ByteArrayContent(new byte[bytes]),
             };
-            request.Headers.Host = "localhost";
             // The server answers before the upload starts, instead of
             // resetting the connection halfway through it.
             request.Headers.ExpectContinue = true;

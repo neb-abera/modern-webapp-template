@@ -61,16 +61,21 @@ overridden per environment with an environment variable (`:` becomes `__`).
 
 | Variable | Default | Set it to |
 | --- | --- | --- |
-| `AllowedHosts` | `localhost` | **Required in production:** the hostnames the app serves, semicolon-separated — `www.example.com;example.com`. Any other `Host` header gets 400. Include the hostname the post-deploy health gate polls. An empty value refuses to start (the framework would read it as "every host"). |
+| `HostAllowlist__Hosts` | empty | **Required outside Development:** the host names the app serves, in one comma-separated value — `www.example.com,example.com`; `*.example.io` matches any subdomain (not `example.io` itself, and not `notexample.io`). Any other `Host` header gets a bodyless 400 and security event 1007. Empty means "no filtering" in Development only; anywhere else the app **refuses to start**, so an unset variable stops a deploy instead of opening the app to every host. |
 | `ForwardedHeaders__TrustedHops` | `0` | The number of proxies in front of the app — next section. |
 | `Kestrel__Limits__MaxRequestBodySize` | `1048576` | Leave it. An endpoint that takes uploads raises its own limit with `RequestSizeLimitAttribute` metadata; raising this raises it for every endpoint. |
 | `RATE_LIMIT_PERMIT` | `100` | Requests per client per 10 s, on endpoints only — static files and `/healthz` are not counted. |
 | `Logging__LogLevel__<category>` | see file | `Microsoft.AspNetCore.Authentication` and `.Authorization` stay at `Information`: that is the level the framework logs refused sign-ins and authorization failures at, and the usual `Microsoft.AspNetCore: Warning` hides them. |
 
-Platform health probes usually call the container by IP address, which is not
-an allowed host. Give the probe a `Host: localhost` header (Azure Container
-Apps and Kubernetes: `httpGet.httpHeaders`) rather than widening
-`AllowedHosts`. The image's own `HEALTHCHECK` already probes `localhost`.
+Health probes need nothing: `/healthz` is answered whatever the `Host`.
+Platform probes (Azure Container Apps, Kubernetes) address the container by
+pod IP, a name nobody can list in advance, and a filter that refused them
+would leave a new revision never turning ready. That is also why the
+framework's own `AllowedHosts` is left at `*` in `appsettings.json` — it sits
+at the front of the pipeline and cannot exempt a path — and
+`server/Api/HostAllowlist.cs` does the filtering instead. The post-deploy
+health gate polls `/healthz`, so the hostname it uses does not have to be
+listed either.
 
 ## Behind a proxy: whose address is it?
 

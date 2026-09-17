@@ -21,7 +21,8 @@
 #   8. byte budget: that image's client build, in gzip bytes, is within
 #      client/byte-budget.json (the checker plants 300 KB and must catch it)
 #   9. smoke: the running container serves client, API, health, security
-#      headers, refuses a Host it was not configured for, runs as a
+#      headers, refuses a Host it was not configured for (but answers
+#      /healthz on it), will not start with no hosts configured, runs as a
 #      non-root user — and `--migrate` applies and exits instead of serving
 #  10. end-to-end: Playwright against the production container
 #  11. mutation canary: a planted server bug must fail the tests
@@ -85,7 +86,7 @@ fi
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
   docker rm -f "$NAME-verify-e2e" > /dev/null 2>&1
-  docker rm -f "$NAME-verify-migrate" "$NAME-verify-db" > /dev/null 2>&1
+  docker rm -f "$NAME-verify-migrate" "$NAME-verify-nohosts" "$NAME-verify-db" > /dev/null 2>&1
   docker rm -f "$NAME-byte-budget-src" "$NAME-byte-budget" "$NAME-check-pii" > /dev/null 2>&1
   docker network rm "$NET" > /dev/null 2>&1
   rm -f "$LOG"
@@ -308,26 +309,50 @@ migrate_applies_and_exits() {
   [ "$state" = "exited 0" ] || { echo "--migrate did not apply and exit 0 (got: $state)"; return 1; }
 }
 
+# With no HostAllowlist__Hosts the production image must exit non-zero naming
+# the variable, not serve every Host. Polled like --migrate, so an image that
+# serves instead fails in 30 s rather than hanging the suite.
+refuses_to_start_without_hosts() {
+  local ctr="$NAME-verify-nohosts" state="" named=""
+  docker rm -f "$ctr" > /dev/null 2>&1
+  docker run -d --name "$ctr" "$IMAGE" > /dev/null || return 1
+  for _ in $(seq 1 30); do
+    state="$(docker inspect --format '{{.State.Status}}' "$ctr" 2> /dev/null)"
+    [ "$state" = exited ] && break
+    sleep 1
+  done
+  docker logs "$ctr" 2>&1 | grep -q 'HostAllowlist__Hosts' && named=yes
+  docker rm -f "$ctr" > /dev/null 2>&1
+  if [ "$state" != exited ] || [ "$named" != yes ]; then
+    echo "image with no hosts configured did not refuse to start (state: $state)"
+    return 1
+  fi
+}
+
 banner "Smoke: production container serves client, API and health, as non-root"
 docker network create "$NET" > /dev/null 2>&1
 docker rm -f "$APP" > /dev/null 2>&1
-# The app answers only to the hosts it is told about (appsettings.json:
-# localhost). The e2e container reaches it by container name, so that name is
-# added the way a deployment adds its domain; the last probe below proves a
-# Host nobody configured is refused.
+# The production image answers only to the hosts it is told about
+# (HostAllowlist__Hosts) and refuses to start when told nothing. The e2e
+# container reaches it by container name, so that name is listed the way a
+# deployment lists its domain. The probes below prove a Host nobody configured
+# is refused, that /healthz is answered anyway (platform probes arrive by pod
+# IP), and that the image with no hosts configured exits instead of serving.
 # Non-root proof: the image's configured user must be a non-zero numeric
 # uid (the Dockerfile sets USER \$APP_UID, 1654 in the chiseled base). The
 # chiseled runtime has no shell to run `id` in, so the image config is the
 # assertion surface; empty (root default), "root" and "0" all fail this.
 if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
    && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" \
-        -e "AllowedHosts=localhost;$APP" "$IMAGE" > /dev/null \
+        -e "HostAllowlist__Hosts=localhost,$APP" "$IMAGE" > /dev/null \
    && for _ in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
    && curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null \
    && curl -fsS "http://localhost:$SMOKE_PORT/" | grep -q '<div id="root">' \
    && curl -fsS "http://localhost:$SMOKE_PORT/api/hello" | grep -q '"message":"Hello from the API"' \
    && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff' \
    && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ] \
+   && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/healthz")" = 200 ] \
+   && refuses_to_start_without_hosts \
    && migrate_applies_and_exits; then
   pass "Container serves the client, API, health and security headers as non-root"
 else

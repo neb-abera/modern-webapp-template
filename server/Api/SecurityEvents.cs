@@ -11,8 +11,8 @@
 // people than the database is. The parameters are typed so that the wrong
 // thing is awkward to pass.
 //
-// 1001-1003 are raised by this template today (the limiter, and
-// AuthorizationRefusals). The rest are here so the code that first needs them
+// 1001-1003 and 1007 are raised by this template today (the limiter,
+// AuthorizationRefusals and HostAllowlist). The rest are here so the code that first needs them
 // finds a name and a number waiting: the first sign-in
 // endpoint calls SignInRefused, the first webhook calls
 // WebhookSignatureRejected, the first form post wires AntiforgeryRejected.
@@ -57,6 +57,12 @@ internal static partial class SecurityEvents
     [LoggerMessage(EventId = 1006, EventName = nameof(WebhookSignatureRejected), Level = LogLevel.Warning,
         Message = "Webhook signature rejected for {Route} from {ClientAddress}")]
     public static partial void WebhookSignatureRejected(ILogger logger, string route, string clientAddress);
+
+    // Before routing, so there is no route pattern yet: the area is "api" or
+    // "page". The refused Host value itself is never logged.
+    [LoggerMessage(EventId = 1007, EventName = nameof(HostRejected), Level = LogLevel.Warning,
+        Message = "Host not allowed for {Method} ({Area}) from {ClientAddress}")]
+    public static partial void HostRejected(ILogger logger, string method, string area, string clientAddress);
 }
 
 // An enum, not a string: a free-text reason is where the attempted user name
