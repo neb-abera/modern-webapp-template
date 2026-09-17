@@ -15,11 +15,13 @@
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
 #   6. the production image builds
-#   7. smoke: the running container serves client, API, health, security
+#   7. byte budget: that image's client build, in gzip bytes, is within
+#      client/byte-budget.json (the checker plants 300 KB and must catch it)
+#   8. smoke: the running container serves client, API, health, security
 #      headers, refuses a Host it was not configured for — and runs as a
 #      non-root user
-#   8. end-to-end: Playwright against the production container
-#   9. mutation canary: a planted server bug must fail the tests
+#   9. end-to-end: Playwright against the production container
+#  10. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -50,7 +52,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=9
+CHECKS_TOTAL=10
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -80,6 +82,7 @@ fi
 cleanup() {
   docker rm -f "$APP" > /dev/null 2>&1
   docker rm -f "$NAME-verify-e2e" > /dev/null 2>&1
+  docker rm -f "$NAME-byte-budget-src" "$NAME-byte-budget" "$NAME-check-pii" > /dev/null 2>&1
   docker network rm "$NET" > /dev/null 2>&1
   rm -f "$LOG"
 }
@@ -266,6 +269,14 @@ if docker build ${VERIFY_DOCKER_BUILD_ARGS:-} -t "$IMAGE" . > "$LOG" 2>&1; then
 else
   tail -25 "$LOG"
   fail "Production image build"
+fi
+
+banner "Byte budget: the production client build, in compressed bytes"
+# Bytes, not timing: the same numbers on a laptop and on a shared runner.
+if ./scripts/check-byte-budget.sh "$IMAGE" 2>&1 | tee "$LOG"; then
+  pass "Entry JS/CSS, initial total and prerendered HTML are within client/byte-budget.json"
+else
+  fail "Byte budget (something grew past client/byte-budget.json, or the checker's self-test)"
 fi
 
 banner "Smoke: production container serves client, API and health, as non-root"
