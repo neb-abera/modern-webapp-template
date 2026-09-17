@@ -54,6 +54,68 @@ it was learned the hard way; keep them if you adapt it to another host.
    to *Zone → Cache Purge* only) and skips with a warning until they exist —
    so it is safe before Cloudflare is configured and correct after.
 
+## Settings the app is deployed with
+
+`server/Api/appsettings.json` is the list of deliberate values, and each is
+overridden per environment with an environment variable (`:` becomes `__`).
+
+| Variable | Default | Set it to |
+| --- | --- | --- |
+| `HostAllowlist__Hosts` | empty | **Required outside Development:** the host names the app serves, in one comma-separated value — `www.example.com,example.com`; `*.example.io` matches any subdomain (not `example.io` itself, and not `notexample.io`). Any other `Host` header gets a bodyless 400 and security event 1007. Empty means "no filtering" in Development only; anywhere else the app **refuses to start**, so an unset variable stops a deploy instead of opening the app to every host. |
+| `ForwardedHeaders__TrustedHops` | `0` | The number of proxies in front of the app — next section. |
+| `Kestrel__Limits__MaxRequestBodySize` | `1048576` | Leave it. An endpoint that takes uploads raises its own limit with `RequestSizeLimitAttribute` metadata; raising this raises it for every endpoint. |
+| `RATE_LIMIT_PERMIT` | `100` | Requests per client per 10 s, on endpoints only — static files and `/healthz` are not counted. |
+| `Logging__LogLevel__<category>` | see file | `Microsoft.AspNetCore.Authentication` and `.Authorization` stay at `Information`: that is the level the framework logs refused sign-ins and authorization failures at, and the usual `Microsoft.AspNetCore: Warning` hides them. |
+
+Health probes need nothing: `/healthz` is answered whatever the `Host`.
+Platform probes (Azure Container Apps, Kubernetes) address the container by
+pod IP, a name nobody can list in advance, and a filter that refused them
+would leave a new revision never turning ready. That is also why the
+framework's own `AllowedHosts` is left at `*` in `appsettings.json` — it sits
+at the front of the pipeline and cannot exempt a path — and
+`server/Api/HostAllowlist.cs` does the filtering instead. The post-deploy
+health gate polls `/healthz`, so the hostname it uses does not have to be
+listed either.
+
+## Behind a proxy: whose address is it?
+
+The rate limiter gives each client its own bucket, and the security log names
+the client that was refused. Behind a CDN and a cloud ingress the socket peer
+is the ingress, for every visitor — so unless the app is told how many proxies
+stand in front of it, all visitors share one bucket and one burst locks
+everyone out. `server/Api/ClientAddress.cs` is the single place the client
+address is resolved; it is configured with one number:
+
+| Setting (environment variable) | Value | When |
+| --- | --- | --- |
+| `ForwardedHeaders__TrustedHops` | `0` (default) | Nothing in front of the app: the socket peer is the client, `X-Forwarded-For` is ignored. Local runs, tests, CI. |
+| | `1` | One proxy (a cloud ingress or load balancer). |
+| | `2` | **Cloudflare → cloud ingress → app**, the shape this template's production estate runs. |
+| `ForwardedHeaders__KnownProxies__0`, `…__1` | IP addresses | Optional second lock: a hop is honoured only when the address reporting it is listed. |
+| `ForwardedHeaders__KnownNetworks__0`, `…__1` | CIDR ranges | The same, for ranges (the CDN's published ranges, the ingress subnet). |
+
+The number is the count of proxies **you operate or contract**, not the number
+of entries in the header. Each proxy appends the peer it saw, so with two
+trusted hops the second entry from the right was written by infrastructure;
+anything further left is whatever the client chose to send, and is ignored. Set
+it too low and visitors share a bucket; set it too high and a client chooses
+its own bucket by writing the header itself.
+
+Hop counting is only sound while **the origin accepts traffic from the proxy
+chain and nothing else**. Lock the container app's ingress to the CDN's
+published ranges (Cloudflare: <https://www.cloudflare.com/ips/>; Azure
+Container Apps: ingress IP restrictions, allow-list mode). With the origin
+open, anyone who finds its hostname connects with one hop fewer than you
+counted and their forged entry lands exactly where the app looks. If you cannot
+lock the origin, set `KnownNetworks` — a forged chain from an unlisted peer is
+then refused rather than believed.
+
+`deploy.yml.example` sets both from repository variables on every deploy:
+`ALLOWED_HOSTS` (required — the deploy stops if it is unset) and
+`TRUSTED_HOPS` (`0` when unset).
+
+IPv6 clients are bucketed per /64, the unit an ISP hands one subscriber.
+
 ## Configuration that reaches the browser
 
 Client-side configuration (`import.meta.env.VITE_*`) is resolved when the
@@ -65,6 +127,35 @@ when they are unset so the deploy stays safe before they are configured.
 
 ## Databases
 
-Run migrations from the production image (the same code path production
-uses), and make the on-startup migration a no-op when everything is already
-applied — CI should exercise both, against a real database service.
+**Migrations are a deploy step, not something the app does on the way up.**
+The production image applies them and exits when run with `--migrate`
+(`server/Api/Migrations.cs`), and the pipeline runs that — as the *migrator*
+role — before the new revision takes traffic:
+
+```bash
+docker run --rm -e "ConnectionStrings__Default=$MIGRATOR_CONNECTION_STRING" \
+  "$REGISTRY/$IMAGE:$GITHUB_SHA" --migrate
+```
+
+`deploy.yml.example` has this step; it skips with a notice until the
+`MIGRATOR_CONNECTION_STRING` secret exists, and a failed migration stops the
+deploy with the old revision still serving. Where the database is not
+reachable from the runner, run the same image and argument as a one-off job
+inside the network (an Azure Container Apps job, a Kubernetes Job).
+
+`MIGRATE_ON_BOOT` defaults to `false` and should stay that way outside local
+development. An app that migrates on boot must serve with a connection string
+that can `ALTER` and `DROP`, and every replica races to migrate on scale-out.
+Two roles instead:
+
+| Role | Used by | May |
+| --- | --- | --- |
+| migrator | the `--migrate` step only | own the tables; DDL |
+| runtime | the serving app | `SELECT`/`INSERT`/`UPDATE`/`DELETE` and sequence use — nothing else |
+
+[`scripts/db/runtime-role.sql`](../scripts/db/runtime-role.sql) sets the
+runtime role up (grants plus default privileges, so migrations never need a
+`GRANT`), and `make verify` proves it against the PostgreSQL that
+`compose.yaml` pins: rows work; `CREATE`, `ALTER`, `DROP` and `TRUNCATE` are
+refused. Write every migration so that the previous revision keeps working
+against the new schema — it is still serving while the step runs.

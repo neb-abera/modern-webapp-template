@@ -15,8 +15,10 @@ make contract # after changing an API shape: regenerate openapi.json and the cli
 ```
 
 `make verify` is the merge gate run locally: server build and unit tests,
-client typecheck/lint/tests, a production image build, a smoke test of the
-running container, the Playwright end-to-end suite, and a mutation canary.
+client typecheck/lint/tests, the API contract and response-DTO checks, the
+database runtime-role check, a production image build and its byte budget, a
+smoke test of the running container, the Playwright end-to-end suite, and a
+mutation canary.
 If it is green on your machine, CI will agree — both run the same
 containers.
 
@@ -36,12 +38,41 @@ and the check tells you when that entry can be dropped.
 * Write tests first, from the entry point a user actually hits (an HTTP
   request, a page interaction), not from internals outward. A change in
   behavior needs a test that fails without it.
+* A response is a record that lists its fields; never return an entity. An
+  entity serializes every column the table ever grows — the email, the
+  password hash, the reset token — to whoever asks. `make verify` reads the
+  response schemas in `server/Api/openapi.json` and fails on a field named
+  like personal or secret data (email, phone, address, zip/postcode, dob,
+  ssn, password, token, secret). If clients really need one, list it in
+  `server/Api/openapi-pii-allowlist.txt` with the reason; a line without a
+  reason fails too.
 * Keep pull requests small and single-purpose, and fill in the pull request
   template.
 * Nothing merges on a red check. Branch protection requires every PR-gating
   workflow (the verify suite, the workflow/script lint, dependency review,
   CodeQL, the container scan, the ZAP baseline scan), so a failing check is
   the review — fix it rather than working around it.
+
+## Raising a byte budget
+
+`make verify` measures the production client build in gzip bytes — the entry
+script, the entry stylesheet, the initial total for `/`, and each prerendered
+page — against `client/byte-budget.json`, and fails when any of them is over.
+The budget sits 15–20% above what was last measured, so ordinary work fits
+and a new dependency does not slip in unnoticed. (`entryCss` is `0` because
+the template ships no stylesheet: the first one is a deliberate raise.)
+
+When it fails, the run prints every measurement. In this order:
+
+1. Find what grew — `npx vite build` reports each chunk; a dependency that
+   arrived for one function is the usual answer, and the fix is not needing
+   it, importing less of it, or loading it lazily off the entry path.
+2. If the growth is the feature, raise the number **in the same pull request
+   as the code that needs it**, to about 15–20% above the new measurement,
+   and say in the description what the bytes bought. A budget raised in a
+   pull request of its own has no reason attached, and one raised "to make CI
+   green" has the wrong one.
+3. Never raise a budget to absorb growth you have not explained.
 
 ## Licensing
 

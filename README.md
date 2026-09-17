@@ -21,16 +21,21 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a Playwright end-to-end suite that runs against the *production image*,
   not a dev server,
 
-* **One verification suite everywhere** — `make verify` runs nine checks
+* **One verification suite everywhere** — `make verify` runs twelve checks
   with a running pass/fail tally: a drift guard proving branch protection
   requires every PR-gating check, server build+tests with a line-coverage
   gate (warnings as errors), client typecheck+lint+tests with coverage
   thresholds, an OpenAPI contract check proving the committed spec and the
   generated client types match the code, a held-majors check that fails when
   a dependency's next major cannot install (the one case Dependabot stays
-  silent about), production image build, container smoke test (which also asserts the image runs as a non-root uid), e2e, and
-  a mutation canary proving the tests catch planted bugs. CI runs exactly
-  the same script, so green locally means green in CI,
+  silent about), a response-DTO check (no field named like personal or secret
+  data leaves the API unlisted), a database runtime-role check against a real
+  PostgreSQL, production image build, a byte budget on that image's client
+  build, container smoke test (which also asserts the image runs as a
+  non-root uid), e2e, and a mutation canary proving the tests catch planted
+  bugs. Every checker that was added proves on each run that it can fail, by
+  planting the defect it exists to catch. CI runs exactly the same script, so
+  green locally means green in CI,
 
 * **A mechanized API contract** — the server emits its OpenAPI document at
   build time (`server/Api/openapi.json`), the client's response types are
@@ -61,10 +66,32 @@ Docker, gated by a test-driven verification suite, and secured by default.
   [docs/manual-setup.md](docs/manual-setup.md),
 
 * **Security by default** — CSP and companion response headers with tests
-  pinning them, IP-partitioned rate limiting, non-root containers, CodeQL
-  (C#, TypeScript, workflows) on every PR, GitHub Actions pinned to commit
-  SHAs and base images to digests, least-privilege workflow tokens, and a
-  SECURITY.md (see it for the full inventory),
+  pinning them; rate limiting on every endpoint, keyed on the real client
+  address behind a configured number of trusted proxies, with static files
+  and `/healthz` left uncounted; authorization required by default, before
+  any sign-in exists, with a test that fails on an endpoint that does not
+  declare who may call it; a host allowlist that answers only configured host
+  names (health route excepted, and no start outside Development without
+  one) and a settings file with deliberate values (1 MB request bodies); a security event log
+  with stable ids that never carries headers, bodies or PII; small tested
+  helpers (`UrlAllowlist`, `WebhookSignature`) so the first stored URL or
+  webhook is not hand-rolled; non-root containers, CodeQL (C#, TypeScript,
+  workflows) on every PR, GitHub Actions pinned to commit SHAs and base
+  images to digests, least-privilege workflow tokens, and a SECURITY.md (see
+  it for the full inventory),
+
+* **A byte budget** — the production client build is measured in gzip bytes
+  (entry script, entry stylesheet, initial total for `/`, each prerendered
+  page) against `client/byte-budget.json`; bytes, never timing, so the gate
+  reads the same everywhere. Images must declare their dimensions (a Biome
+  rule, itself tested), and static responses are pinned cookie-free so a CDN
+  can keep serving them,
+
+* **A database extension point that is machinery** — no data layer ships,
+  but `--migrate` already runs as its own deploy step with `MIGRATE_ON_BOOT`
+  off, PostgreSQL waits behind a compose profile pinned by digest, and the
+  serving app's database role is proven on every run to be unable to
+  `CREATE`, `ALTER` or `DROP`,
 
 * **Cutting-edge, not bleeding-edge toolchain** — .NET 10 LTS, React 19,
   Vite 8, Vitest 4, TypeScript 7, Biome 2 (one fast linter+formatter instead
@@ -140,7 +167,8 @@ server/           .NET 10 minimal API (Api/) and its xUnit v3 tests (Api.Tests/)
 client/           React 19 + TypeScript + Vite app, Vitest tests, Biome config
 e2e/              Playwright suite, run against the production container
 tools/api-types/  openapi-typescript and the TypeScript 5 it needs, in a manifest of their own
-scripts/          verify.sh — the verification suite CI and `make verify` share
+scripts/          verify.sh — the verification suite CI and `make verify` share — and the
+                  checkers it runs (check-*.sh, db/), each with its own negative test
 Dockerfile        client build, server build, dev toolchain and runtime stages
 compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile
 .github/          CI, CodeQL and release workflows (SHA-pinned), Dependabot
@@ -158,9 +186,46 @@ compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile
 
 ### Adding a database
 
-Uncomment the `db` service in [`compose.yaml`](compose.yaml) (PostgreSQL 18)
-and add a connection string to the server. Keep the pattern: every dependency
-runs in a container.
+`docker compose --profile db up -d db` starts PostgreSQL 18 (digest-pinned in
+[`compose.yaml`](compose.yaml); `make ports`' sibling `DB_PORT` in `.env` says
+where). Keep the pattern: every dependency runs in a container. The
+extension points are already machinery — `--migrate` as a separate deploy
+step, `MIGRATE_ON_BOOT` off, and a runtime database role proven unable to
+change the schema — and
+[docs/manual-setup.md](docs/manual-setup.md#8-the-day-you-add-a-database)
+has the data-layer defaults to adopt with it.
+
+## Where the practices come from
+
+The canon this template enforces, and the gate that enforces it — advice
+that is not a failing check decays, so each source is wired to one:
+
+* **OWASP Top 10 / ASVS: broken access control** — authorization is the
+  fallback policy, `EveryEndpointDeclaresWhoMayCallIt` fails on an undeclared
+  endpoint, and the "user B is refused user A's object" test helper is there
+  for the first owned object,
+* **OWASP API Security: excessive data exposure** — responses are records
+  that list their fields; the response-DTO check reads `openapi.json` and
+  fails on a PII-named field without an allowlisted reason,
+* **OWASP Secure Headers and Cheat Sheets** — the header table tests, host
+  filtering, the 1 MB body limit, the cookie-free static responses, and the
+  `UrlAllowlist` / constant-time `WebhookSignature` helpers with their
+  failure cases tested,
+* **OWASP Logging Cheat Sheet** — the security event table with stable ids,
+  and a test that sends credentials and asserts none reaches the log,
+* **Least privilege (CIS PostgreSQL benchmark)** — the runtime database role,
+  proven against a real PostgreSQL to be refused DDL; migrations as a
+  separate step under a separate role,
+* **Web performance budgets (web.dev)** — the byte budget, image dimensions
+  enforced by the linter, compression and immutable caching pinned by the
+  e2e delivery suite,
+* **OpenSSF supply-chain guidance** — SHA-pinned actions, digest-pinned
+  images, locked restores, Dependabot on every ecosystem, Scorecard, CodeQL,
+  trivy and ZAP on every PR.
+
+What a gate cannot check — naming things well, small functions, honest tests
+— is what the mutation canary, the test-first workflow and code review are
+for.
 
 ## After generating from this template
 
@@ -187,8 +252,9 @@ coverage floors are enforced by the verify suite itself — so this is
 optional and nothing fails without it.
 
 The complete list of things machinery cannot do for you — the automerge
-token, cloud credentials, Cloudflare cache rules, the prerender route list —
-lives in [docs/manual-setup.md](docs/manual-setup.md). Work through it once;
+token, cloud credentials, the app's hostnames and proxy count, Cloudflare
+cache rules, the prerender route list, and what to adopt on the day you add
+sign-in, a database or a webhook — lives in [docs/manual-setup.md](docs/manual-setup.md). Work through it once;
 each entry says why it is manual.
 
 ## Deploying
