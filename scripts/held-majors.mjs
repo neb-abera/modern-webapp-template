@@ -63,7 +63,8 @@ function canInstall(dir, specs) {
   }
 }
 
-// `<dir> <package> <reason...>` per line; the reason is mandatory.
+// `<dir> <package> <reason...>` per line; the reason is mandatory. The
+// file is shared with the NuGet check.
 function readExceptions() {
   if (!existsSync(EXCEPTIONS_FILE)) return [];
   return readFileSync(EXCEPTIONS_FILE, "utf8")
@@ -118,15 +119,20 @@ async function candidates(dir) {
       return { name, current, latest, ageDays };
     }),
   );
-  return looked.filter(Boolean);
+  return { names, found: looked.filter(Boolean) };
 }
 
 async function check(dirs) {
   const exceptions = readExceptions();
   let failed = false;
   for (const dir of dirs) {
-    const excepted = exceptions.filter((e) => e.dir === dir).map((e) => e.name);
-    const all = await candidates(dir);
+    const { names, found: all } = await candidates(dir);
+    // Only entries naming a package this manifest has are this check's
+    // business (.held-majors is shared with the NuGet check). A typo here is
+    // caught by the real package failing the check.
+    const excepted = exceptions
+      .filter((e) => e.dir === dir && names.includes(e.name))
+      .map((e) => e.name);
     const judged = all.filter(
       (c) => !excepted.includes(c.name) && c.ageDays >= GRACE_DAYS,
     );
