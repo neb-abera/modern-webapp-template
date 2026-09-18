@@ -29,10 +29,31 @@ using System.Xml.Linq;
 // framework; that lag is not a silent pin. Judged only after this long.
 int graceDays = int.TryParse(Environment.GetEnvironmentVariable("HELD_MAJORS_GRACE_DAYS"), out var g) ? g : 30;
 const string ExceptionsFile = ".held-majors";
-var http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All });
+var http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(60) };
 http.DefaultRequestHeaders.UserAgent.ParseAdd("held-majors-check");
 
 return args is ["--self-test"] ? await SelfTest() : await Check(args);
+
+// A registry call, retried once after a pause. A registry blip is an
+// outage, not a finding: it is reported as such and exits 2, distinct from
+// the 1 of a held major, so a red run says which it was.
+async Task<T> Registry<T>(Func<Task<T>> call)
+{
+    for (var attempt = 1; ; attempt++)
+    {
+        try { return await call(); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+        {
+            if (attempt >= 2)
+            {
+                Console.Error.WriteLine($"error: registry unreachable after {attempt} attempts; this is an outage, not a held major");
+                Console.Error.WriteLine(e.Message);
+                Environment.Exit(2);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        }
+    }
+}
 
 static int Major(string version) => int.Parse(version.Split('.')[0]);
 
@@ -92,13 +113,13 @@ static List<(string project, List<string> frameworks, HashSet<string> packages)>
 // index (pages may be inline or one fetch away).
 async Task<(string version, DateTimeOffset published)?> Latest(string id)
 {
-    var index = JsonDocument.Parse(await http.GetStringAsync($"https://api.nuget.org/v3/registration5-gz-semver2/{id.ToLowerInvariant()}/index.json")).RootElement;
+    var index = JsonDocument.Parse(await Registry(() => http.GetStringAsync($"https://api.nuget.org/v3/registration5-gz-semver2/{id.ToLowerInvariant()}/index.json"))).RootElement;
     (string, DateTimeOffset)? best = null;
     foreach (var page in index.GetProperty("items").EnumerateArray())
     {
         var items = page.TryGetProperty("items", out var inline)
             ? inline
-            : JsonDocument.Parse(await http.GetStringAsync(page.GetProperty("@id").GetString()!)).RootElement.GetProperty("items");
+            : JsonDocument.Parse(await Registry(() => http.GetStringAsync(page.GetProperty("@id").GetString()!))).RootElement.GetProperty("items");
         foreach (var item in items.EnumerateArray())
         {
             var entry = item.GetProperty("catalogEntry");
@@ -118,7 +139,7 @@ async Task<(string version, DateTimeOffset published)?> Latest(string id)
 async Task<HashSet<string>> ShippedFrameworks(string id, string version)
 {
     var lower = id.ToLowerInvariant();
-    var bytes = await http.GetByteArrayAsync($"https://api.nuget.org/v3-flatcontainer/{lower}/{version}/{lower}.{version}.nupkg");
+    var bytes = await Registry(() => http.GetByteArrayAsync($"https://api.nuget.org/v3-flatcontainer/{lower}/{version}/{lower}.{version}.nupkg"));
     using var zip = new ZipArchive(new MemoryStream(bytes));
     var frameworks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in zip.Entries)
