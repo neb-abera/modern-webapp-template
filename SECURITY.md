@@ -52,7 +52,8 @@ Projects generated from this template ship with:
   with the monthly `dotnet-major-upgrade` workflow covering the cross-major
   .NET jump Dependabot cannot make, and the verify suite's held-majors check
   covering the npm major Dependabot cannot offer because it does not install
-  (accepted cases, with reasons, in [.held-majors](.held-majors)),
+  and the NuGet major it cannot offer because no referencing project can
+  consume it (accepted cases, with reasons, in [.held-majors](.held-majors)),
 * least-privilege workflow tokens (`contents: read` except where releasing
   requires write),
 * an end-to-end suite that verifies the security headers reach real browsers,

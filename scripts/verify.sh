@@ -11,9 +11,10 @@
 #      (vitest.config's coverage.thresholds fail the run on their own)
 #   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   5. held majors: no dependency's next major is uninstallable, which is
-#      the case Dependabot cannot open a pull request for
-#      (scripts/check-held-majors.sh)
+#   5. held majors: no npm dependency's next major is uninstallable and no
+#      NuGet dependency's next major ships only a framework the project
+#      cannot consume, the two cases Dependabot cannot open a pull request
+#      for (scripts/check-held-majors.sh)
 #   6. response DTOs: no response schema in that spec has a field named like
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
@@ -261,14 +262,15 @@ else
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true
 
-banner "Held majors: every newer major can install, so Dependabot can offer it"
-# The self-test runs first, every time: it replays the failure this check
-# exists for from published versions, so a check that has lost the ability
-# to fail is caught here rather than trusted.
+banner "Held majors: every newer npm and NuGet major can be taken, so Dependabot can offer it"
+# The self-tests run first, every time: they replay the failure this check
+# exists for from published versions (an npm peer conflict, a NuGet package
+# shipping only a newer framework), so a check that has lost the ability to
+# fail is caught here rather than trusted.
 if ./scripts/check-held-majors.sh --self-test > "$LOG" 2>&1 \
    && ./scripts/check-held-majors.sh >> "$LOG" 2>&1; then
   grep -E ' -> |^self-test' "$LOG" || true
-  pass "No dependency is held behind a major that cannot install"
+  pass "No npm or NuGet dependency is held behind a major it cannot take"
 else
   tail -40 "$LOG"
   fail "Held majors (an uninstallable major, a stale .held-majors entry, or a broken self-test)"
