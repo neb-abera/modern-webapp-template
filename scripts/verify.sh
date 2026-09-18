@@ -323,8 +323,13 @@ migrate_applies_and_exits() {
     sleep 1
   done
   docker logs "$ctr" 2>&1 | grep -q '^migrate:' || state="no migrate output"
+  if [ "$state" != "exited 0" ]; then
+    echo "--migrate did not apply and exit 0 (got: $state)"
+    docker logs "$ctr" 2>&1 | tail -20
+    docker rm -f "$ctr" > /dev/null 2>&1
+    return 1
+  fi
   docker rm -f "$ctr" > /dev/null 2>&1
-  [ "$state" = "exited 0" ] || { echo "--migrate did not apply and exit 0 (got: $state)"; return 1; }
 }
 
 # With no HostAllowlist__Hosts the production image must exit non-zero naming
@@ -340,11 +345,14 @@ refuses_to_start_without_hosts() {
     sleep 1
   done
   docker logs "$ctr" 2>&1 | grep -q 'HostAllowlist__Hosts' && named=yes
-  docker rm -f "$ctr" > /dev/null 2>&1
   if [ "$state" != exited ] || [ "$named" != yes ]; then
-    echo "image with no hosts configured did not refuse to start (state: $state)"
+    # The evidence is this container's, not the main app's: say what it did.
+    echo "image with no hosts configured did not refuse to start (state: $state, exit code: $(docker inspect --format '{{.State.ExitCode}}' "$ctr" 2> /dev/null))"
+    docker logs "$ctr" 2>&1 | tail -20
+    docker rm -f "$ctr" > /dev/null 2>&1
     return 1
   fi
+  docker rm -f "$ctr" > /dev/null 2>&1
 }
 
 banner "Smoke: production container serves client, API and health, as non-root"
