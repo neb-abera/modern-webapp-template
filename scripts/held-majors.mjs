@@ -6,7 +6,13 @@
 //   node scripts/held-majors.mjs --self-test  prove the check can fail
 
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -14,13 +20,19 @@ import { promisify } from "node:util";
 // A new major often lands before the plugins around it widen their peer
 // ranges. That lag is not a silent pin, it is the ecosystem catching up, so
 // a major is judged only once it has been out this long.
-const GRACE_DAYS = process.env.HELD_MAJORS_GRACE_DAYS ? Number(process.env.HELD_MAJORS_GRACE_DAYS) : 30;
+const GRACE_DAYS = process.env.HELD_MAJORS_GRACE_DAYS
+  ? Number(process.env.HELD_MAJORS_GRACE_DAYS)
+  : 30;
 const EXCEPTIONS_FILE = ".held-majors";
 
 const major = (version) => Number.parseInt(version.split(".")[0], 10);
 
 function npm(args, cwd) {
-  return execFileSync("npm", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return execFileSync("npm", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 // Can these specs be installed into a copy of this manifest? Resolution
@@ -33,7 +45,18 @@ function canInstall(dir, specs) {
   // openapi-typescript 7 until the lock was left out).
   cpSync(join(dir, "package.json"), join(work, "package.json"));
   try {
-    npm(["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ...specs], work);
+    npm(
+      [
+        "install",
+        "--package-lock-only",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--save-exact",
+        ...specs,
+      ],
+      work,
+    );
     return { ok: true };
   } catch (error) {
     return { ok: false, output: `${error.stderr ?? ""}`.trim() };
@@ -50,9 +73,11 @@ function readExceptions() {
     .map((line) => {
       const [dir, name, ...reason] = line.split(/\s+/);
       if (!name || reason.length === 0) {
-        throw new Error(`${EXCEPTIONS_FILE}: "${line}" needs <dir> <package> <reason>`);
+        throw new Error(
+          `${EXCEPTIONS_FILE}: "${line}" needs <dir> <package> <reason>`,
+        );
       }
-      return { dir: dir.replace(/^\/|\/$/g, ""), name };
+      return { dir: dir.replace(/^\/|\/$/g, "") || ".", name };
     });
 }
 
@@ -61,19 +86,35 @@ function readExceptions() {
 async function candidates(dir) {
   const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   const lock = JSON.parse(readFileSync(join(dir, "package-lock.json"), "utf8"));
-  const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+  // Registry dependencies only: a file:, link:, workspace:, git or URL spec
+  // has no "next major" for Dependabot to offer.
+  const names = Object.entries({
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+  })
+    .filter(
+      ([, spec]) => !/^(file:|link:|workspace:|git|github:|https?:)/.test(spec),
+    )
+    .map(([name]) => name);
   const looked = await Promise.all(
     names.map(async (name) => {
       const current = lock.packages?.[`node_modules/${name}`]?.version;
-      if (!current) throw new Error(`${dir}: ${name} is not in package-lock.json`);
-      const { stdout } = await promisify(execFile)("npm", ["view", name, "dist-tags.latest", "time", "--json"], {
-        cwd: dir,
-        maxBuffer: 64 * 1024 * 1024,
-      });
+      if (!current)
+        throw new Error(`${dir}: ${name} is not in package-lock.json`);
+      const { stdout } = await promisify(execFile)(
+        "npm",
+        ["view", name, "dist-tags.latest", "time", "--json"],
+        {
+          cwd: tmpdir(),
+          maxBuffer: 64 * 1024 * 1024,
+        },
+      );
       const view = JSON.parse(stdout);
       const latest = view["dist-tags.latest"];
       if (major(latest) <= major(current)) return null;
-      const ageDays = Math.floor((Date.now() - Date.parse(view.time[latest])) / 86_400_000);
+      const ageDays = Math.floor(
+        (Date.now() - Date.parse(view.time[latest])) / 86_400_000,
+      );
       return { name, current, latest, ageDays };
     }),
   );
@@ -86,7 +127,9 @@ async function check(dirs) {
   for (const dir of dirs) {
     const excepted = exceptions.filter((e) => e.dir === dir).map((e) => e.name);
     const all = await candidates(dir);
-    const judged = all.filter((c) => !excepted.includes(c.name) && c.ageDays >= GRACE_DAYS);
+    const judged = all.filter(
+      (c) => !excepted.includes(c.name) && c.ageDays >= GRACE_DAYS,
+    );
     for (const c of all) {
       const note = excepted.includes(c.name)
         ? `excepted in ${EXCEPTIONS_FILE}`
@@ -100,10 +143,18 @@ async function check(dirs) {
     const base = specs.length ? canInstall(dir, specs) : { ok: true };
     if (!base.ok) {
       failed = true;
-      console.error(`\nerror: ${dir}: ${specs.join(" ")} cannot install beside the rest of the manifest.`);
-      console.error("Dependabot cannot open a pull request for a bump that does not install, so this");
-      console.error("pin would age in silence. Give the package a manifest of its own (see");
-      console.error(`tools/api-types), or record it in ${EXCEPTIONS_FILE} with the reason.\n`);
+      console.error(
+        `\nerror: ${dir}: ${specs.join(" ")} cannot install beside the rest of the manifest.`,
+      );
+      console.error(
+        "Dependabot cannot open a pull request for a bump that does not install, so this",
+      );
+      console.error(
+        "pin would age in silence. Give the package a manifest of its own (see",
+      );
+      console.error(
+        `tools/api-types), or record it in ${EXCEPTIONS_FILE} with the reason.\n`,
+      );
       console.error(base.output.split("\n").slice(0, 25).join("\n"));
       continue;
     }
@@ -114,10 +165,14 @@ async function check(dirs) {
       const c = all.find((x) => x.name === name);
       if (!c) {
         failed = true;
-        console.error(`error: ${EXCEPTIONS_FILE}: ${dir} ${name} has no newer major; drop the entry.`);
+        console.error(
+          `error: ${EXCEPTIONS_FILE}: ${dir} ${name} has no newer major; drop the entry.`,
+        );
       } else if (canInstall(dir, [...specs, `${name}@${c.latest}`]).ok) {
         failed = true;
-        console.error(`error: ${EXCEPTIONS_FILE}: ${dir} ${name}@${c.latest} installs now; drop the entry and take the bump.`);
+        console.error(
+          `error: ${EXCEPTIONS_FILE}: ${dir} ${name}@${c.latest} installs now; drop the entry and take the bump.`,
+        );
       }
     }
     if (!failed) console.log(`${dir}: ok`);
@@ -134,14 +189,19 @@ function selfTest() {
     const dir = mkdtempSync(join(tmpdir(), "held-majors-fixture-"));
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ private: true, devDependencies: { "openapi-typescript": "6.7.6", typescript } }),
+      JSON.stringify({
+        private: true,
+        devDependencies: { "openapi-typescript": "6.7.6", typescript },
+      }),
     );
     return dir;
   };
   const refused = canInstall(fixture("7.0.2"), ["openapi-typescript@7.13.0"]);
   const accepted = canInstall(fixture("5.9.3"), ["openapi-typescript@7.13.0"]);
   if (refused.ok || !/ERESOLVE/.test(refused.output)) {
-    console.error("self-test: a bump with an unsatisfiable peer was NOT refused with ERESOLVE");
+    console.error(
+      "self-test: a bump with an unsatisfiable peer was NOT refused with ERESOLVE",
+    );
     console.error(refused.output ?? "");
     return 1;
   }
@@ -150,7 +210,9 @@ function selfTest() {
     console.error(accepted.output);
     return 1;
   }
-  console.log("self-test: refused the uninstallable bump (ERESOLVE), accepted the installable one");
+  console.log(
+    "self-test: refused the uninstallable bump (ERESOLVE), accepted the installable one",
+  );
   return 0;
 }
 

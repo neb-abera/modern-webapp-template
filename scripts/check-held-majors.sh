@@ -30,12 +30,22 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NAME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
-NODE_IMAGE="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-base$|\1|p' Dockerfile)"
-[ -n "$NODE_IMAGE" ] || { echo "error: could not derive the Node image from the Dockerfile" >&2; exit 1; }
 
+# The Node image is whatever the Dockerfile's node base stage pins, so this
+# cannot drift from the node everything else runs on. The Dockerfile may sit
+# at the root or one directory down; the stage is `nodebase` or `node-base`.
+NODE_IMAGE=""
+for dockerfile in Dockerfile */Dockerfile; do
+  [ -f "$dockerfile" ] || continue
+  NODE_IMAGE="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-\{0,1\}base$|\1|p' "$dockerfile" | head -1)"
+  [ -z "$NODE_IMAGE" ] || break
+done
+[ -n "$NODE_IMAGE" ] || { echo "error: no 'FROM node:... AS nodebase' stage found in a Dockerfile" >&2; exit 1; }
+
+# A root manifest is `directory: /`, which becomes `.`.
 dirs="$(awk '
-  /package-ecosystem:/ { npm = ($NF == "npm") }
-  npm && /directory:/  { sub(/^\//, "", $NF); print $NF; npm = 0 }
+  /package-ecosystem:/ { gsub(/"/, "", $NF); npm = ($NF == "npm") }
+  npm && /directory:/  { gsub(/"/, "", $NF); sub(/^\//, "", $NF); print ($NF == "" ? "." : $NF); npm = 0 }
 ' .github/dependabot.yml)"
 [ -n "$dirs" ] || { echo "error: no npm entries found in .github/dependabot.yml" >&2; exit 1; }
 
@@ -46,6 +56,8 @@ else
   args=($dirs)
 fi
 
-docker run --rm -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache \
+# Read-only mount, no copy: everything the check writes goes to a temp
+# directory inside the container.
+docker run --rm -v "$PWD":/src:ro -w /src -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache \
   -e npm_config_update_notifier=false -e HELD_MAJORS_GRACE_DAYS \
-  "$NODE_IMAGE" sh -c 'cp -r /src /w && cd /w && node scripts/held-majors.mjs "$@"' sh "${args[@]}"
+  "$NODE_IMAGE" node scripts/held-majors.mjs "${args[@]}"
