@@ -27,6 +27,10 @@
 # Accepted cases live in .held-majors with their reasoning, like
 # .trivyignore. An entry that is no longer needed fails the check too.
 #
+# Exit 1 is a finding (a held major or a stale entry). Exit 2 is a registry
+# that could not be reached after a retry: an outage to wait out, not a
+# finding, and the message says so.
+#
 #   scripts/check-held-majors.sh              run the check
 #   scripts/check-held-majors.sh --self-test  prove it can fail
 #
@@ -61,8 +65,13 @@ npm_dirs="$(manifest_dirs npm)"
 nuget_dirs="$(manifest_dirs nuget)"
 [ -n "$npm_dirs$nuget_dirs" ] || { echo "error: no npm or nuget entries found in .github/dependabot.yml" >&2; exit 1; }
 
-status=0
+# Exit 1 when either half found something; exit 2 when a half could not
+# reach its registry and neither found anything. A finding outranks an
+# outage in the exit code so it cannot be read as one.
+found=0
+outage=0
 if [ -n "$npm_dirs" ]; then
+  rc=0
   if [ "${1:-}" = --self-test ]; then
     args=(--self-test)
   else
@@ -73,10 +82,13 @@ if [ -n "$npm_dirs" ]; then
   # directory inside the container.
   docker run --rm -v "$PWD":/src:ro -w /src -v "$NAME-npm:/npm-cache" -e npm_config_cache=/npm-cache \
     -e npm_config_update_notifier=false -e HELD_MAJORS_GRACE_DAYS \
-    "$NODE_IMAGE" node scripts/held-majors.mjs "${args[@]}" || status=1
+    "$NODE_IMAGE" node scripts/held-majors.mjs "${args[@]}" || rc=$?
+  case $rc in 0) ;; 2) outage=1 ;; *) found=1 ;; esac
 fi
 
 if [ -n "$nuget_dirs" ]; then
+  rc=0
+  nuget_log="$(mktemp)"
   SDK_IMAGE=""
   for dockerfile in Dockerfile */Dockerfile; do
     [ -f "$dockerfile" ] || continue
@@ -94,7 +106,24 @@ if [ -n "$nuget_dirs" ]; then
   # compiles into a scratch directory of its own.
   docker run --rm -v "$PWD":/src:ro -w /src \
     -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 -e HELD_MAJORS_GRACE_DAYS \
-    "$SDK_IMAGE" sh -c 'cp scripts/held-nuget-majors.cs /tmp/ && cd /src && dotnet run /tmp/held-nuget-majors.cs -- "$@"' sh "${args[@]}" || status=1
+    "$SDK_IMAGE" sh -c 'cp scripts/held-nuget-majors.cs /tmp/ && cd /src && dotnet run /tmp/held-nuget-majors.cs -- "$@"' sh "${args[@]}" 2>&1 | tee "$nuget_log" || rc=$?
+  # dotnet run restores the file-based app before any line of it runs, and
+  # that restore reads nuget.org's service index: with the registry down it
+  # fails NU1301 before the app's own retry can. That is the outage, too.
+  # (pipefail: rc is docker's exit code, tee's is 0.)
+  case $rc in
+    0) ;;
+    2) outage=1 ;;
+    *) if grep -q NU1301 "$nuget_log"; then
+         echo "error: nuget.org unreachable (NU1301); this is an outage, not a held major" >&2
+         outage=1
+       else
+         found=1
+       fi ;;
+  esac
+  rm -f "$nuget_log"
 fi
 
-exit "$status"
+if [ "$found" -eq 1 ]; then exit 1; fi
+if [ "$outage" -eq 1 ]; then exit 2; fi
+exit 0

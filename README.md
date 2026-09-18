@@ -221,7 +221,13 @@ that is not a failing check decays, so each source is wired to one:
   e2e delivery suite,
 * **OpenSSF supply-chain guidance** — SHA-pinned actions, digest-pinned
   images, locked restores, Dependabot on every ecosystem, Scorecard, CodeQL,
-  trivy and ZAP on every PR.
+  trivy and ZAP on every PR, and the held-majors check for the one bump
+  Dependabot stays silent about: an npm major that cannot install beside its
+  manifest, or a NuGet major that ships no framework the project can
+  consume. npm and NuGet only; the C++ and Rust templates have no
+  counterpart because Cargo has no peer ranges (a major Dependabot offers
+  there fails red, not silently) and CMake dependencies have no Dependabot
+  ecosystem at all.
 
 What a gate cannot check — naming things well, small functions, honest tests
 — is what the mutation canary, the test-first workflow and code review are
