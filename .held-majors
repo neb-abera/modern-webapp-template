@@ -1,8 +1,12 @@
-# Majors that cannot install beside their manifest, accepted with reasoning.
-# scripts/check-held-majors.sh reads this; the format is
+# Majors that cannot be taken, accepted with reasoning: an npm major that
+# cannot install beside its manifest, or a NuGet major that ships no
+# framework the referencing project can consume. scripts/check-held-majors.sh
+# reads this for both ecosystems; the format is
 #
 #   <directory> <package> <reason>
 #
+# where <directory> is the manifest's directory as .github/dependabot.yml
+# names it (`/` is `.`; the NuGet one is where Directory.Packages.props is).
 # An entry is a debt: the check fails once the bump installs or there is no
 # newer major left, so nothing here outlives its reason.
 
