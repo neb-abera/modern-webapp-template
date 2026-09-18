@@ -26,12 +26,14 @@ containers.
 `client/src/api-types.d.ts` is not what the code generates. After changing a
 request or response shape, run `make contract` and commit both files.
 
-It also fails when a dependency's next major cannot install beside the rest of
-its manifest (`scripts/check-held-majors.sh`). Dependabot only opens a pull
-request for a bump that installs, so without this check such a pin ages with
-nothing red. The fix is a manifest of its own for the package (see
-`tools/api-types/`); a case you accept goes in `.held-majors` with its reason,
-and the check tells you when that entry can be dropped.
+It also fails when a dependency's next major cannot be taken
+(`scripts/check-held-majors.sh`): an npm major that cannot install beside the
+rest of its manifest, or a NuGet major that ships no framework the referencing
+project can consume. Dependabot only offers a bump the project can take, so
+without this check such a pin ages with nothing red. The fix is a manifest of
+its own for an npm package (see `tools/api-types/`) or a target framework move
+for a NuGet one; a case you accept goes in `.held-majors` with its reason, and
+the check tells you when that entry can be dropped.
 
 ## Making a change
 

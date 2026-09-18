@@ -27,8 +27,8 @@ Docker, gated by a test-driven verification suite, and secured by default.
   gate (warnings as errors), client typecheck+lint+tests with coverage
   thresholds, an OpenAPI contract check proving the committed spec and the
   generated client types match the code, a held-majors check that fails when
-  a dependency's next major cannot install (the one case Dependabot stays
-  silent about), a response-DTO check (no field named like personal or secret
+  an npm or NuGet dependency's next major cannot be taken (the one case
+  Dependabot stays silent about), a response-DTO check (no field named like personal or secret
   data leaves the API unlisted), a database runtime-role check against a real
   PostgreSQL, production image build, a byte budget on that image's client
   build, container smoke test (which also asserts the image runs as a
