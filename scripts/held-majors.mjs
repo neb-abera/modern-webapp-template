@@ -27,6 +27,32 @@ const EXCEPTIONS_FILE = ".held-majors";
 
 const major = (version) => Number.parseInt(version.split(".")[0], 10);
 
+// A registry call, retried once after a pause. A registry blip is an
+// outage, not a finding: it is reported as such and exits 2, distinct from
+// the 1 of a held major, so a red run says which it was.
+async function registry(call) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call();
+    } catch (error) {
+      if (attempt >= 2) {
+        console.error(
+          `error: registry unreachable after ${attempt} attempts; this is an outage, not a held major`,
+        );
+        console.error(
+          `${error.stderr ?? error.message ?? error}`
+            .trim()
+            .split("\n")
+            .slice(0, 5)
+            .join("\n"),
+        );
+        process.exit(2);
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
+
 function npm(args, cwd) {
   return execFileSync("npm", args, {
     cwd,
@@ -102,15 +128,24 @@ async function candidates(dir) {
       const current = lock.packages?.[`node_modules/${name}`]?.version;
       if (!current)
         throw new Error(`${dir}: ${name} is not in package-lock.json`);
-      const { stdout } = await promisify(execFile)(
-        "npm",
-        ["view", name, "dist-tags.latest", "time", "--json"],
-        {
-          cwd: tmpdir(),
-          maxBuffer: 64 * 1024 * 1024,
-        },
+      // --prefer-online: the answer must be the registry's, not the npm
+      // cache's (a local run once saw a major a CI run did not).
+      const view = JSON.parse(
+        await registry(() =>
+          promisify(execFile)(
+            "npm",
+            [
+              "view",
+              name,
+              "dist-tags.latest",
+              "time",
+              "--json",
+              "--prefer-online",
+            ],
+            { cwd: tmpdir(), maxBuffer: 64 * 1024 * 1024 },
+          ).then((r) => r.stdout),
+        ),
       );
-      const view = JSON.parse(stdout);
       const latest = view["dist-tags.latest"];
       if (major(latest) <= major(current)) return null;
       const ageDays = Math.floor(
