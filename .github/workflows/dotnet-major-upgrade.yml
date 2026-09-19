@@ -33,6 +33,13 @@ jobs:
           # checkout's persisted credential, so don't leave one on disk.
           persist-credentials: false
 
+      # Nobody watches this run. Before it touches the real tree, the script
+      # rehearses the upgrade on a planted stale major with the registries
+      # stubbed and must move every lockstep site; if that no longer works,
+      # the job fails here and no half-upgraded PR is opened.
+      - name: Prove the upgrade script still does the job
+        run: scripts/check-dotnet-major.sh --self-test
+
       - name: Check for a newer GA .NET major
         id: check
         run: SUMMARY_FILE="$RUNNER_TEMP/dotnet-major-summary.md" scripts/check-dotnet-major.sh
