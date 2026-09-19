@@ -76,11 +76,14 @@ test-client: ## run the client typecheck, lint and unit tests
 	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-npm:/npm-cache -e npm_config_cache=/npm-cache $(NODE_IMAGE) \
 		sh -c 'cp -r /src/client /w && cd /w && npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npm run test'
 
+# The suite imports client/src/prerenderedRoutes.ts (the list the prerender
+# tool bakes) to prove every prerendered route with JavaScript off, so that
+# file travels with it at the same relative path, as in verify.sh.
 e2e: ## run only the Playwright end-to-end suite against the production image
 	docker compose up -d --build --wait app
-	docker run --rm --network $(IMAGE)_default -v $(CURDIR)/e2e:/src:ro -v $(IMAGE)-npm:/npm-cache \
+	docker run --rm --network $(IMAGE)_default -v $(CURDIR):/src:ro -v $(IMAGE)-npm:/npm-cache \
 		-e npm_config_cache=/npm-cache -e E2E_BASE_URL=http://app-under-test:8080 $(PLAYWRIGHT_IMAGE) \
-		bash -c 'cp -r /src /w && cd /w && npm ci --no-audit --no-fund && npx playwright test'; \
+		bash -c 'mkdir -p /w/client/src && cp -r /src/e2e /w/e2e && cp /src/client/src/prerenderedRoutes.ts /w/client/src/ && cd /w/e2e && npm ci --no-audit --no-fund && npx playwright test'; \
 	status=$$?; docker compose down; exit $$status
 
 clean: ## remove compose containers and the verification network

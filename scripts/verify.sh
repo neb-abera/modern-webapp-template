@@ -5,31 +5,41 @@
 # host needs only Docker and git. This mirrors what CI gates before a merge:
 #
 #   1. required checks: branch protection and the PR-gating workflows agree
-#   2. server: build + unit tests (warnings as errors, locked-mode restore)
+#      (the checker first proves a renamed context and a lost pull_request
+#      trigger are both caught)
+#   2. template parity: every file .template-parity lists is byte-identical
+#      to the template's default branch — trivially so inside the template,
+#      which is the source (the checker first proves a drifted file and a
+#      missing file are both caught)
+#   3. server: build + unit tests (warnings as errors, locked-mode restore)
 #      + line coverage at or above SERVER_COVERAGE_MIN
-#   3. client: typecheck + lint (Biome) + unit tests + coverage thresholds
+#   4. client: typecheck + lint (Biome) + unit tests + coverage thresholds
 #      (vitest.config's coverage.thresholds fail the run on their own)
-#   4. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
+#   5. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   5. held majors: no npm dependency's next major is uninstallable and no
+#   6. held majors: no npm dependency's next major is uninstallable and no
 #      NuGet dependency's next major ships only a framework the project
 #      cannot consume, the two cases Dependabot cannot open a pull request
 #      for (scripts/check-held-majors.sh)
-#   6. response DTOs: no response schema in that spec has a field named like
+#   7. response DTOs: no response schema in that spec has a field named like
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
-#   7. database runtime role: scripts/db/runtime-role.sql, applied to a real
+#   8. database runtime role: scripts/db/runtime-role.sql, applied to a real
 #      PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
 #      checker over-privileges a second role and must catch it)
-#   8. the production image builds
-#   9. byte budget: that image's client build, in gzip bytes, is within
-#      client/byte-budget.json (the checker plants 300 KB and must catch it)
-#  10. smoke: the running container serves client, API, health, security
+#   9. the production image builds
+#  10. byte budget: that image's client build, in gzip bytes, is within
+#      client/byte-budget.json (the checker proves its boundary: exactly at
+#      the limit passes; one byte over, a missing artifact and a missing
+#      budget all fail)
+#  11. smoke: the running container serves client, API, health, security
 #      headers, refuses a Host it was not configured for (but answers
 #      /healthz on it), will not start with no hosts configured, runs as a
-#      non-root user — and `--migrate` applies and exits instead of serving
-#  11. end-to-end: Playwright against the production container
-#  12. mutation canary: a planted server bug must fail the tests
+#      non-root user, its own `--healthcheck` probe (the Dockerfile's
+#      HEALTHCHECK) says healthy against it and unhealthy against a dead
+#      port — and `--migrate` applies and exits instead of serving
+#  12. end-to-end: Playwright against the production container
+#  13. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -60,7 +70,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=12
+CHECKS_TOTAL=13
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -143,6 +153,13 @@ SERVER_COVERAGE_MIN=85
 # also collects line coverage (coverlet.MTP) and fails below
 # SERVER_COVERAGE_MIN — enforced here by parsing the cobertura report,
 # because the coverlet MTP extension collects but does not gate.
+#
+# --coverlet-single-hit: the floor reads covered-or-not, never the counts,
+# and coverlet's default keeps a hit counter running inside whatever loops
+# the tests drive hardest (on aberaTech, 2026-09-08: 15 s bare, 8 m 38 s
+# instrumented, 28 s with single hit, identical line-rate). The template's
+# suite is too small to show it (117 tests: ~1 s bare, ~2 s either way),
+# but every app generated from here inherits the setting before it grows.
 server_tests() {
   # In CI (COV_OUT set), mount coverage-artifacts/ so the cobertura report
   # survives the container for the summary and the Codecov upload.
@@ -157,7 +174,7 @@ server_tests() {
     cp -r /src /w
     cd /w/server
     if [ "$COVERAGE_MODE" = coverage ]; then
-      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura
+      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura --coverlet-single-hit
       report="$(find . -name "coverage.cobertura.*.xml" | head -1)"
       [ -n "$report" ] || { echo "error: no cobertura report produced" >&2; exit 1; }
       if [ -d /covout ]; then cp "$report" /covout/server-cobertura.xml; fi
@@ -178,10 +195,25 @@ server_passed() { grep -Eo 'succeeded: [0-9]+|Passed: [0-9]+' "$LOG" | tail -1 |
 server_failed() { grep -Eo 'failed: [0-9]+|Failed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 
 banner "Required checks: setup.sh's contexts match the PR-gating workflows"
-if ./scripts/check-required-contexts.sh 2>&1 | tee "$LOG"; then
-  pass "Branch-protection contexts and PR-gating job names agree"
+# The self-test runs first, every time, here and before every other checker
+# that has one: a check that has lost the ability to fail is caught rather
+# than trusted.
+if ./scripts/check-required-contexts.sh --self-test 2>&1 | tee "$LOG" \
+   && ./scripts/check-required-contexts.sh 2>&1 | tee -a "$LOG"; then
+  pass "Branch-protection contexts and PR-gating job names agree (and the checker caught a renamed context)"
 else
-  fail "Required-checks drift guard"
+  fail "Required-checks drift guard (a context/job mismatch, or the checker's self-test)"
+fi
+
+banner "Template parity: files shared with modern-webapp-template are byte-identical to it"
+# Inside the template this passes without fetching (it is the source); in a
+# repository generated from it, each path in .template-parity is compared
+# with the template's default branch. The self-test needs no network.
+if ./scripts/check-template-parity.sh --self-test 2>&1 | tee "$LOG" \
+   && ./scripts/check-template-parity.sh 2>&1 | tee -a "$LOG"; then
+  pass "Shared files match the template (and the checker caught a planted drift)"
+else
+  fail "Template parity (a shared file drifted from the template, or the checker's self-test)"
 fi
 
 banner "Server: build + unit tests (warnings as errors) + coverage"
@@ -304,7 +336,7 @@ fi
 banner "Byte budget: the production client build, in compressed bytes"
 # Bytes, not timing: the same numbers on a laptop and on a shared runner.
 if ./scripts/check-byte-budget.sh "$IMAGE" 2>&1 | tee "$LOG"; then
-  pass "Entry JS/CSS, initial total and prerendered HTML are within client/byte-budget.json"
+  pass "Entry JS/CSS, initial total and prerendered HTML are within client/byte-budget.json (and the checker failed one byte over)"
 else
   fail "Byte budget (something grew past client/byte-budget.json, or the checker's self-test)"
 fi
@@ -368,6 +400,13 @@ docker rm -f "$APP" > /dev/null 2>&1
 # uid (the Dockerfile sets USER \$APP_UID, 1654 in the chiseled base). The
 # chiseled runtime has no shell to run `id` in, so the image config is the
 # assertion surface; empty (root default), "root" and "0" all fail this.
+# Healthcheck proof: the Dockerfile's HEALTHCHECK re-enters the binary with
+# --healthcheck (Program.cs), which is all compose's service_healthy and
+# `up --wait` have to go on. Run the same command inside the serving
+# container: exit 0 against the live port, and exactly 1 (Program.cs's
+# unhealthy code, not a crash) when ASPNETCORE_HTTP_PORTS names a port
+# nothing listens on — a probe that cannot say "unhealthy" would keep a
+# dead revision in rotation.
 if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
    && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" \
         -e "HostAllowlist__Hosts=localhost,$APP" "$IMAGE" > /dev/null \
@@ -378,9 +417,11 @@ if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][
    && curl -fsSI "http://localhost:$SMOKE_PORT/" | grep -qi 'x-content-type-options: nosniff' \
    && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ] \
    && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/healthz")" = 200 ] \
+   && docker exec "$APP" dotnet Api.dll --healthcheck \
+   && { docker exec -e ASPNETCORE_HTTP_PORTS=8099 "$APP" dotnet Api.dll --healthcheck; [ $? -eq 1 ]; } \
    && refuses_to_start_without_hosts \
    && migrate_applies_and_exits; then
-  pass "Container serves the client, API, health and security headers as non-root"
+  pass "Container serves the client, API, health and security headers as non-root; --healthcheck tells a live port from a dead one"
 else
   docker logs "$APP" 2>&1 | tail -40
   fail "Production container smoke test"
@@ -393,13 +434,17 @@ docker rm -f "$E2E_CTR" > /dev/null 2>&1
 # github reporter's workspace-relative annotation paths (e2e/<file>) match
 # the repo layout; GITHUB_ACTIONS activates that reporter (see
 # e2e/playwright.config.ts). Both are inert outside GitHub Actions.
-if docker run --name "$E2E_CTR" --network "$NET" -v "$PWD/e2e":/src:ro -v "$NAME-npm:/npm-cache" \
+# The suite reads client/src/prerenderedRoutes.ts (the list the prerender
+# tool bakes) to prove every prerendered route with JavaScript off, so that
+# one file travels with it at the same relative path.
+if docker run --name "$E2E_CTR" --network "$NET" -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" \
      -e npm_config_cache=/npm-cache -e E2E_BASE_URL="http://$APP:8080" -e CI="${CI:-}" \
      -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" -e GITHUB_WORKSPACE=/w \
      "$PLAYWRIGHT_IMAGE" bash -c '
     set -e
-    mkdir -p /w
-    cp -r /src /w/e2e
+    mkdir -p /w/client/src
+    cp -r /src/e2e /w/e2e
+    cp /src/client/src/prerenderedRoutes.ts /w/client/src/
     cd /w/e2e
     npm ci --no-audit --no-fund
     npx playwright test

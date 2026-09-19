@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { prerenderedRoutes } from "../client/src/prerenderedRoutes";
 
 // How the app reaches the browser. Each assertion pins a delivery regression
 // that is invisible to unit tests and easy to ship: an uncompressed bundle, a
@@ -71,17 +72,33 @@ test("the document and hashed assets set no cookies", async ({ page }) => {
   }
 });
 
-test("the home page is readable before any JavaScript runs", async ({ browser }) => {
-  // Prerendering's whole promise: first paint is the page, not a blank shell
-  // waiting on the bundle. A browser with JS disabled is the strictest proof.
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
-  await page.goto("/");
-
-  await expect(page.getByRole("heading", { name: "Modern Web App" })).toBeVisible();
-
-  await context.close();
+// Prerendering's whole promise: first paint is the page, not a blank shell
+// waiting on the bundle. A browser with JS disabled is the strictest proof,
+// and it runs for every route on the list the prerender tool bakes from
+// (client/src/prerenderedRoutes.ts), not a copy of it: adding a route there
+// adds the proof here.
+test("the home page is on the prerendered list", () => {
+  expect(prerenderedRoutes).toContain("/");
 });
+
+for (const route of prerenderedRoutes) {
+  test(`${route} is readable before any JavaScript runs`, async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    const response = await page.goto(route);
+
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.locator("#root")).not.toBeEmpty();
+    if (route === "/") {
+      // Exact, not just "an h1": a prerender that baked a placeholder or an
+      // error heading must not pass as the home page.
+      await expect(page.getByRole("heading", { name: "Modern Web App" })).toBeVisible();
+    }
+
+    await context.close();
+  });
+}
 
 test("a route that is not prerendered still boots the app", async ({ page }) => {
   // Unknown routes fall back to the empty spa.html shell and render

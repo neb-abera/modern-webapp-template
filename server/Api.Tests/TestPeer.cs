@@ -44,13 +44,21 @@ internal sealed class TestPeer : IStartupFilter
             builder.ConfigureTestServices(services => services.AddTransient<IStartupFilter, TestPeer>());
         });
 
-    public static HttpRequestMessage Get(string path, string peer, string? forwardedFor = null)
+    // The two headers a client can write to claim an address: the standard
+    // one the app resolves by hop count, and Cloudflare's, which nothing
+    // here reads (ClientAddressTests proves neither moves the key on its own).
+    public static HttpRequestMessage Get(string path, string peer, string? forwardedFor = null, string? cfConnectingIp = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Add(Header, peer);
         if (forwardedFor is not null)
         {
             request.Headers.Add("X-Forwarded-For", forwardedFor);
+        }
+
+        if (cfConnectingIp is not null)
+        {
+            request.Headers.Add("CF-Connecting-IP", cfConnectingIp);
         }
 
         return request;

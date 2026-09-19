@@ -3,7 +3,7 @@
 // that property with a reason. Driven by check-response-pii.sh, which also
 // proves this can fail.
 //
-//   node check-response-pii.mjs <openapi.json> <allowlist.txt>
+//   node check-response-pii.mjs <openapi.json> <allowlist.txt> <denylist.txt>
 //
 // Only responses are walked: what a client may SEND (a sign-in form's
 // password) is not what the server gives away. Every schema reachable from a
@@ -12,18 +12,28 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 
-// Matched against the property name lowercased with punctuation removed, so
-// emailAddress, email_address and EMail all match "email".
-const PII =
-  /email|phone|address|zip|postcode|postalcode|dob|dateofbirth|birthdate|ssn|password|token|secret/;
-
-const [specPath, allowlistPath] = process.argv.slice(2);
-if (!specPath || !allowlistPath) {
-  process.stderr.write("usage: check-response-pii.mjs <openapi.json> <allowlist.txt>\n");
+const [specPath, allowlistPath, denylistPath] = process.argv.slice(2);
+if (!specPath || !allowlistPath || !denylistPath) {
+  process.stderr.write("usage: check-response-pii.mjs <openapi.json> <allowlist.txt> <denylist.txt>\n");
   process.exit(2);
 }
 
 const spec = JSON.parse(readFileSync(specPath, "utf8"));
+
+// The denylist (server/Api/response-pii-denylist.txt) is one token per line
+// and is shared with the runtime test, so the two gates agree by
+// construction. Matched against the property name lowercased with
+// punctuation removed, so emailAddress, email_address and EMail all match
+// "email".
+const tokens = readFileSync(denylistPath, "utf8")
+  .split("\n")
+  .map((line) => line.trim())
+  .filter((line) => line !== "" && !line.startsWith("#"));
+if (tokens.length === 0) {
+  process.stderr.write(`${denylistPath} lists no tokens: nothing would be caught\n`);
+  process.exit(2);
+}
+const PII = new RegExp(tokens.map((token) => token.replace(/[^a-z0-9]/g, "")).join("|"));
 
 const problems = [];
 const allowed = new Map();
