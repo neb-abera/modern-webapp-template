@@ -18,4 +18,11 @@
   <ItemGroup>
     <ProjectReference Include="../Api/Api.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The runtime response-PII test (ResponsePiiTests.cs) reads the same
+         denylist and allowlist the static gate (scripts/check-response-pii.sh)
+         reads, so the two gates agree by construction. -->
+    <None Include="../Api/response-pii-denylist.txt" Link="response-pii-denylist.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Api/openapi-pii-allowlist.txt" Link="openapi-pii-allowlist.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

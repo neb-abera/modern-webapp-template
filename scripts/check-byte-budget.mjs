@@ -12,7 +12,12 @@
 //   initialTotal  the home document + entryJs + entryCss + modulepreloads:
 //                 what a first visit to / must download before it is whole
 //   htmlPerRoute  each prerendered <route>/index.html, individually
-import { readdirSync, readFileSync } from "node:fs";
+//
+// Exit codes: 0 = within budget, 1 = over budget (or nothing to measure),
+// 2 = an artifact the document names is missing, 3 = the budget file is
+// missing or not JSON, 64 = usage. Distinct, so the self-test can tell a
+// missing artifact from a passing build: both used to be silent.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { gzipSync } from "node:zlib";
@@ -20,14 +25,31 @@ import { gzipSync } from "node:zlib";
 const [dist, budgetPath] = process.argv.slice(2);
 if (!dist || !budgetPath) {
   process.stderr.write("usage: check-byte-budget.mjs <dist-dir> <budget.json>\n");
-  process.exit(2);
+  process.exit(64);
 }
 
-const budget = JSON.parse(readFileSync(budgetPath, "utf8"));
-const gz = (file) => gzipSync(readFileSync(path.join(dist, file)), { level: 9 }).length;
+let budget;
+try {
+  budget = JSON.parse(readFileSync(budgetPath, "utf8"));
+} catch (cause) {
+  process.stderr.write(`budget file ${budgetPath} is missing or not JSON: ${cause.message}\n`);
+  process.exit(3);
+}
+
+// A file the build should contain but does not is a broken build, not a
+// small one: it must never read as "0 bytes, within budget".
+const contents = (file) => {
+  const full = path.join(dist, file);
+  if (!existsSync(full)) {
+    process.stderr.write(`artifact missing: ${file} is named by index.html but is not in ${dist}\n`);
+    process.exit(2);
+  }
+  return readFileSync(full);
+};
+const gz = (file) => gzipSync(contents(file), { level: 9 }).length;
 const refs = (html, pattern) => [...html.matchAll(pattern)].map((match) => match[1]);
 
-const home = readFileSync(path.join(dist, "index.html"), "utf8");
+const home = contents("index.html").toString("utf8");
 const scripts = refs(home, /<script[^>]*type="module"[^>]*src="([^"]+)"/g);
 const styles = refs(home, /<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g);
 const preloads = refs(home, /<link[^>]*rel="modulepreload"[^>]*href="([^"]+)"/g);
