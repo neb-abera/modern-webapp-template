@@ -103,15 +103,18 @@ check() (
   exit "$status"
 )
 
-# expect <exit> <fixed string in the output> <label> <tree>: run the check
-# on a tree and require both the exit code and the message. The message
-# matters as much as the code: a check that fails for the wrong reason has
-# not been proved.
+# expect <exit> <fixed string> <label> <tree>: run the check on a tree and
+# require both the exit code and the message, as a substring of the output
+# (expect_line: as a whole line, for the names, where "  - verify" must not
+# be satisfied by "  - verify-renamed"). The message matters as much as the
+# code: a check that fails for the wrong reason has not been proved.
 SELF_TEST_FAILED=0
-expect() {
-  local want="$1" needle="$2" label="$3" root="$4" code=0 out
+expect() { expect_with -F "$@"; }
+expect_line() { expect_with -Fx "$@"; }
+expect_with() {
+  local grep_mode="$1" want="$2" needle="$3" label="$4" root="$5" code=0 out
   out="$(check "$root" 2>&1)" || code=$?
-  if [ "$code" -eq "$want" ] && printf '%s\n' "$out" | grep -Fq -- "$needle"; then
+  if [ "$code" -eq "$want" ] && printf '%s\n' "$out" | grep -q "$grep_mode" -- "$needle"; then
     echo "self-test: ok: $label (exit $code)"
   else
     echo "self-test FAILED: $label: wanted exit $want and '$needle', got exit $code:" >&2
@@ -131,22 +134,33 @@ self_test() {
   cp scripts/setup.sh "$dir/healthy/scripts/"
   cp "${WORKFLOWS[@]}" "$dir/healthy/.github/workflows/"
 
+  # Plants are made with sed into a new file, then moved over: sed -i is
+  # spelled differently on GNU and BSD, and this runs on both.
+  edit() { # edit <file> <sed script>
+    sed "$2" "$1" > "$1.planted" && mv "$1.planted" "$1"
+  }
+
   # Plant 1: the first required context renamed to a name no workflow has.
   # setup.sh would then demand a check that never reports (every merge
-  # blocked) while the real job goes unrequired (a red run merges).
+  # blocked) while the real job goes unrequired (a red run merges). The
+  # first context is a plain word (the verify job), so it is safe in a sed
+  # pattern as it is; the assertion below would say if that stops holding.
   first="$(grep '"contexts":' scripts/setup.sh | grep -o '"[^"]*"' | sed 's/"//g' | grep -v '^contexts$' | head -1)"
+  case "$first" in
+    *[!A-Za-z0-9_-]*|'') echo "self-test FAILED: the first context '$first' is not a plain word; the plant would need escaping" >&2; return 1 ;;
+  esac
   cp -R "$dir/healthy" "$dir/renamed"
-  PLANT="$first" perl -pi -e 's/"\Q$ENV{PLANT}\E"/"$ENV{PLANT}-renamed"/ if /"contexts":/' "$dir/renamed/scripts/setup.sh"
+  edit "$dir/renamed/scripts/setup.sh" "/\"contexts\":/ s/\"$first\"/\"$first-renamed\"/"
 
   # Plant 2: a PR-gating workflow that no longer triggers on pull requests.
   cp -R "$dir/healthy" "$dir/untriggered"
-  perl -ni -e 'print unless /^  pull_request:$/' "$dir/untriggered/.github/workflows/ci.yml"
+  edit "$dir/untriggered/.github/workflows/ci.yml" '/^  pull_request:$/d'
 
   expect 0 "required contexts and PR-gating job names agree" "the real files agree" "$dir/healthy"
   expect 1 "no matching PR-gating job" "a renamed context is reported as unmatched" "$dir/renamed"
-  expect 1 "  - $first-renamed" "the report names the stale context" "$dir/renamed"
+  expect_line 1 "  - $first-renamed" "the report names the stale context" "$dir/renamed"
   expect 1 "NOT required by setup.sh" "the job the renamed context left behind is reported as unrequired" "$dir/renamed"
-  expect 1 "  - $first" "the report names the unrequired job" "$dir/renamed"
+  expect_line 1 "  - $first" "the report names the unrequired job" "$dir/renamed"
   expect 1 "has no unfiltered 'pull_request:' trigger" "a workflow that stopped gating pull requests is reported" "$dir/untriggered"
 
   if [ "$SELF_TEST_FAILED" -eq 0 ]; then
