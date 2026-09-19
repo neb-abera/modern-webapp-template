@@ -174,3 +174,12 @@ jobs:
 
       - name: shellcheck (scripts/*.sh, scripts/db/*.sh)
         run: '"$RUNNER_TEMP/shellcheck" scripts/*.sh scripts/db/*.sh'
+
+      # The monthly upgrade tool (dotnet-major-upgrade.yml) runs unattended,
+      # so this is the only run anyone watches: its self-test upgrades a
+      # planted stale major in a temp copy of the tree with curl and docker
+      # stubbed, and a regex that rotted is a red pull request here rather
+      # than a wrong upgrade PR in November. No network: harden-runner's
+      # block policy above stays as it is.
+      - name: check-dotnet-major.sh self-test (the upgrade tool proves it does the job)
+        run: ./scripts/check-dotnet-major.sh --self-test

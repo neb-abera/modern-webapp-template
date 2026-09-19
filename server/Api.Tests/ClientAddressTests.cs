@@ -10,7 +10,8 @@ namespace Api.Tests;
 // refused" means "same client" and "second request served" means "different
 // client". An audit of two production apps found every visitor sharing one
 // bucket (keyed on the ingress) — and the naive fix, trusting X-Forwarded-For,
-// lets any client pick its own bucket.
+// lets any client pick its own bucket. CF-Connecting-IP is the same header
+// under Cloudflare's name, and gets the same proof: forged, it moves nothing.
 public sealed class ClientAddressTests : IDisposable
 {
     private const string Ingress = "10.0.0.7";
@@ -19,9 +20,9 @@ public sealed class ClientAddressTests : IDisposable
 
     public void Dispose() => factory.Dispose();
 
-    private async Task<HttpStatusCode> Hello(HttpClient client, string peer, string? forwardedFor = null)
+    private async Task<HttpStatusCode> Hello(HttpClient client, string peer, string? forwardedFor = null, string? cfConnectingIp = null)
     {
-        using var request = TestPeer.Get("/api/hello", peer, forwardedFor);
+        using var request = TestPeer.Get("/api/hello", peer, forwardedFor, cfConnectingIp);
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         return response.StatusCode;
     }
@@ -37,6 +38,38 @@ public sealed class ClientAddressTests : IDisposable
         Assert.Equal(HttpStatusCode.TooManyRequests, await Hello(client, "203.0.113.5", "2.2.2.2"));
         // A different socket peer is a different client.
         Assert.Equal(HttpStatusCode.OK, await Hello(client, "203.0.113.6", "1.1.1.1"));
+    }
+
+    [Fact]
+    public async Task ByDefaultAForgedCfConnectingIpDoesNotMoveTheKeyEither()
+    {
+        // Cloudflare writes CF-Connecting-IP for the origin; a client that is
+        // not behind Cloudflare can write it just as easily. Nothing here
+        // reads it, and this is the test that keeps it that way.
+        using var host = TestPeer.Host(factory, ("RATE_LIMIT_PERMIT", "1"));
+        using var client = host.CreateClient();
+
+        Assert.Equal(HttpStatusCode.OK, await Hello(client, "203.0.113.5", cfConnectingIp: "1.1.1.1"));
+        // Same socket peer, a different claimed address: still the same bucket.
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Hello(client, "203.0.113.5", cfConnectingIp: "2.2.2.2"));
+        // A different socket peer is a different client.
+        Assert.Equal(HttpStatusCode.OK, await Hello(client, "203.0.113.6", cfConnectingIp: "1.1.1.1"));
+    }
+
+    [Fact]
+    public async Task WithTrustedHopsCfConnectingIpIsStillNotConsulted()
+    {
+        // Behind the real chain the visitor comes from X-Forwarded-For by hop
+        // count. A CF-Connecting-IP that disagrees with the chain buys no new
+        // bucket, and on its own, with no chain, neither does it.
+        using var host = TestPeer.Host(factory, ("RATE_LIMIT_PERMIT", "1"), ("ForwardedHeaders:TrustedHops", "2"));
+        using var client = host.CreateClient();
+
+        Assert.Equal(HttpStatusCode.OK, await Hello(client, Ingress, $"198.51.100.1, {Cdn}", cfConnectingIp: "198.51.100.2"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Hello(client, Ingress, $"198.51.100.1, {Cdn}", cfConnectingIp: "198.51.100.3"));
+        // No X-Forwarded-For at all: the peer is the client, whatever the header claims.
+        Assert.Equal(HttpStatusCode.OK, await Hello(client, "10.0.0.8", cfConnectingIp: "198.51.100.4"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, await Hello(client, "10.0.0.8", cfConnectingIp: "198.51.100.5"));
     }
 
     [Fact]

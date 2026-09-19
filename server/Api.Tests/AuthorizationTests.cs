@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
+using static Api.Tests.TestIdentity;
 
 namespace Api.Tests;
 
@@ -85,6 +86,11 @@ internal sealed class TestIdentity(IOptionsMonitor<AuthenticationSchemeOptions> 
         Assert.Equal(HttpStatusCode.Unauthorized, toAnonymous.StatusCode);
     }
 
+    // An endpoint for Host(): a path, a handler and its metadata (an
+    // AuthorizeAttribute, an AllowAnonymousAttribute, or nothing at all).
+    public static RouteEndpoint Endpoint(string path, RequestDelegate handler, params object[] metadata) =>
+        new(handler, Microsoft.AspNetCore.Routing.Patterns.RoutePatternFactory.Parse(path), 0, new EndpointMetadataCollection(metadata), path);
+
     // Program maps the real endpoints; a test cannot add to them. Selecting an
     // endpoint before routing runs has the same effect — routing stands down
     // when one is already chosen — so these pass through the app's own
@@ -119,9 +125,6 @@ public sealed class AuthorizationTests : IDisposable
         factory.Dispose();
         logs.Dispose();
     }
-
-    private static RouteEndpoint Endpoint(string path, RequestDelegate handler, params object[] metadata) =>
-        new(handler, Microsoft.AspNetCore.Routing.Patterns.RoutePatternFactory.Parse(path), 0, new EndpointMetadataCollection(metadata), path);
 
     private static readonly RequestDelegate Ok = context =>
     {

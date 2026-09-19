@@ -21,21 +21,26 @@ Docker, gated by a test-driven verification suite, and secured by default.
   and a Playwright end-to-end suite that runs against the *production image*,
   not a dev server,
 
-* **One verification suite everywhere** — `make verify` runs twelve checks
+* **One verification suite everywhere** — `make verify` runs thirteen checks
   with a running pass/fail tally: a drift guard proving branch protection
-  requires every PR-gating check, server build+tests with a line-coverage
-  gate (warnings as errors), client typecheck+lint+tests with coverage
-  thresholds, an OpenAPI contract check proving the committed spec and the
-  generated client types match the code, a held-majors check that fails when
-  an npm or NuGet dependency's next major cannot be taken (the one case
-  Dependabot stays silent about), a response-DTO check (no field named like personal or secret
-  data leaves the API unlisted), a database runtime-role check against a real
-  PostgreSQL, production image build, a byte budget on that image's client
-  build, container smoke test (which also asserts the image runs as a
-  non-root uid), e2e, and a mutation canary proving the tests catch planted
-  bugs. Every checker that was added proves on each run that it can fail, by
-  planting the defect it exists to catch. CI runs exactly the same script, so
-  green locally means green in CI,
+  requires every PR-gating check, a template-parity check proving files
+  shared with the template are byte-identical to it, server build+tests with
+  a line-coverage gate (warnings as errors), client typecheck+lint+tests with
+  coverage thresholds, an OpenAPI contract check proving the committed spec
+  and the generated client types match the code, a held-majors check that
+  fails when an npm or NuGet dependency's next major cannot be taken (the one
+  case Dependabot stays silent about), a response-DTO check (no field named
+  like personal or secret data leaves the API unlisted, checked in the OpenAPI
+  document and again at runtime by calling every anonymous route), a database
+  runtime-role check against a real PostgreSQL, production image build, a
+  byte budget on that image's client build, container smoke test (which also
+  asserts the image runs as a non-root uid and that its own `--healthcheck`
+  probe tells a live port from a dead one), e2e, and a mutation canary
+  proving the tests catch planted bugs. Every checker proves on each run that
+  it can fail, by planting the defect it exists to catch — a renamed
+  required context, a drifted shared file, a leaking response schema, an
+  over-privileged database role, a bundle one byte over budget. CI runs
+  exactly the same script, so green locally means green in CI,
 
 * **A mechanized API contract** — the server emits its OpenAPI document at
   build time (`server/Api/openapi.json`), the client's response types are

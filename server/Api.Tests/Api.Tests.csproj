@@ -18,4 +18,9 @@
   <ItemGroup>
     <ProjectReference Include="../Api/Api.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The runtime response-PII test (ResponsePiiTests.cs) reads the same
+         allowlist the static gate (scripts/check-response-pii.sh) reads. -->
+    <None Include="../Api/openapi-pii-allowlist.txt" Link="openapi-pii-allowlist.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

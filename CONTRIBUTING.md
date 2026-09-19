@@ -14,11 +14,13 @@ make verify   # run the full verification suite, exactly as CI does
 make contract # after changing an API shape: regenerate openapi.json and the client types
 ```
 
-`make verify` is the merge gate run locally: server build and unit tests,
-client typecheck/lint/tests, the API contract and response-DTO checks, the
-database runtime-role check, a production image build and its byte budget, a
-smoke test of the running container, the Playwright end-to-end suite, and a
-mutation canary.
+`make verify` is the merge gate run locally: the required-checks and
+template-parity drift guards, server build and unit tests, client
+typecheck/lint/tests, the API contract, held-majors and response-DTO checks,
+the database runtime-role check, a production image build and its byte
+budget, a smoke test of the running container, the Playwright end-to-end
+suite, and a mutation canary. Every checker with a `--self-test` runs it
+first, so a checker that can no longer fail is a red check, not a green one.
 If it is green on your machine, CI will agree — both run the same
 containers.
 
