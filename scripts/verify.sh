@@ -403,9 +403,10 @@ docker rm -f "$APP" > /dev/null 2>&1
 # Healthcheck proof: the Dockerfile's HEALTHCHECK re-enters the binary with
 # --healthcheck (Program.cs), which is all compose's service_healthy and
 # `up --wait` have to go on. Run the same command inside the serving
-# container: exit 0 against the live port, and non-zero when
-# ASPNETCORE_HTTP_PORTS names a port nothing listens on — a probe that
-# cannot say "unhealthy" would keep a dead revision in rotation.
+# container: exit 0 against the live port, and exactly 1 (Program.cs's
+# unhealthy code, not a crash) when ASPNETCORE_HTTP_PORTS names a port
+# nothing listens on — a probe that cannot say "unhealthy" would keep a
+# dead revision in rotation.
 if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
    && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" \
         -e "HostAllowlist__Hosts=localhost,$APP" "$IMAGE" > /dev/null \
@@ -417,7 +418,7 @@ if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][
    && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/")" = 400 ] \
    && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-this-app.example' "http://localhost:$SMOKE_PORT/healthz")" = 200 ] \
    && docker exec "$APP" dotnet Api.dll --healthcheck \
-   && ! docker exec -e ASPNETCORE_HTTP_PORTS=8099 "$APP" dotnet Api.dll --healthcheck \
+   && { docker exec -e ASPNETCORE_HTTP_PORTS=8099 "$APP" dotnet Api.dll --healthcheck; [ $? -eq 1 ]; } \
    && refuses_to_start_without_hosts \
    && migrate_applies_and_exits; then
   pass "Container serves the client, API, health and security headers as non-root; --healthcheck tells a live port from a dead one"

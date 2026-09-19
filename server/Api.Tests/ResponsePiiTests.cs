@@ -17,21 +17,31 @@ namespace Api.Tests;
 // what the code declares: an endpoint that returns an entity through an
 // untyped Results.Ok, or writes JSON by hand, has no schema there and passes
 // it unseen. This half calls the endpoints and reads what actually comes
-// back. Same denylist, same allowlist file. The static gate keeps the
+// back. Same denylist file, same allowlist file. The static gate keeps the
 // per-schema precision (Profile.email); this one matches the field name
 // wherever it appears, because a hand-written response has no schema name
 // to match — and a name allowlisted for one schema turning up on another is
 // already the static gate's failure.
-internal static partial class ResponsePii
+internal static class ResponsePii
 {
-    // Mirrors PII in scripts/check-response-pii.mjs. A name is matched
-    // lowercased with punctuation removed, so emailAddress, email_address
-    // and EMail all match "email".
-    [GeneratedRegex("email|phone|address|zip|postal|postcode|ssn|dob|birth|password|token|secret")]
-    private static partial Regex Denylist();
-
     public static string Normalize(string name) =>
         string.Concat(name.ToLowerInvariant().Where(char.IsAsciiLetterOrDigit));
+
+    // The tokens in server/Api/response-pii-denylist.txt (one per line,
+    // comments and blanks ignored), as the same regex check-response-pii.mjs
+    // builds from the same file. A name is matched lowercased with
+    // punctuation removed, so emailAddress, email_address and EMail all
+    // match "email".
+    public static Regex Denylist(IEnumerable<string> lines)
+    {
+        var tokens = lines.Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .Select(Normalize)
+            .ToList();
+        return tokens.Count > 0
+            ? new Regex(string.Join('|', tokens), RegexOptions.CultureInvariant)
+            : throw new InvalidDataException("the response PII denylist lists no tokens: nothing would be caught");
+    }
 
     // The property names server/Api/openapi-pii-allowlist.txt allows:
     // "<Schema>.<property>  <reason>" per line, comments and blanks ignored.
@@ -44,14 +54,14 @@ internal static partial class ResponsePii
 
     // Every property in a JSON document named like personal or secret data
     // and not allowlisted, as a path: contact.emailAddress, devices[0].phone.
-    public static IReadOnlyList<string> Findings(JsonElement element, IReadOnlySet<string> allowed)
+    public static IReadOnlyList<string> Findings(JsonElement element, Regex denylist, IReadOnlySet<string> allowed)
     {
         var findings = new List<string>();
-        Walk(element, "", allowed, findings);
+        Walk(element, "", denylist, allowed, findings);
         return findings;
     }
 
-    private static void Walk(JsonElement element, string path, IReadOnlySet<string> allowed, List<string> findings)
+    private static void Walk(JsonElement element, string path, Regex denylist, IReadOnlySet<string> allowed, List<string> findings)
     {
         switch (element.ValueKind)
         {
@@ -60,12 +70,12 @@ internal static partial class ResponsePii
                 {
                     var here = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
                     var normalized = Normalize(property.Name);
-                    if (Denylist().IsMatch(normalized) && !allowed.Contains(normalized))
+                    if (denylist.IsMatch(normalized) && !allowed.Contains(normalized))
                     {
                         findings.Add(here);
                     }
 
-                    Walk(property.Value, here, allowed, findings);
+                    Walk(property.Value, here, denylist, allowed, findings);
                 }
 
                 break;
@@ -73,7 +83,7 @@ internal static partial class ResponsePii
                 var index = 0;
                 foreach (var item in element.EnumerateArray())
                 {
-                    Walk(item, $"{path}[{index++}]", allowed, findings);
+                    Walk(item, $"{path}[{index++}]", denylist, allowed, findings);
                 }
 
                 break;
@@ -85,8 +95,11 @@ internal static partial class ResponsePii
 
 public sealed class ResponsePiiTests : IDisposable
 {
-    // The same file the static gate reads, copied beside the tests by
+    // The same two files the static gate reads, copied beside the tests by
     // Api.Tests.csproj.
+    private static readonly Regex Denied =
+        ResponsePii.Denylist(File.ReadLines(Path.Combine(AppContext.BaseDirectory, "response-pii-denylist.txt")));
+
     private static readonly IReadOnlySet<string> Allowed =
         ResponsePii.AllowedNames(File.ReadLines(Path.Combine(AppContext.BaseDirectory, "openapi-pii-allowlist.txt")));
 
@@ -100,7 +113,7 @@ public sealed class ResponsePiiTests : IDisposable
     private static async Task<IReadOnlyList<string>> FindingsIn(HttpResponseMessage response)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken));
-        return ResponsePii.Findings(document.RootElement, Allowed);
+        return ResponsePii.Findings(document.RootElement, Denied, Allowed);
     }
 
     // Every route a stranger can GET, from the route table itself, so a new
@@ -199,7 +212,18 @@ public sealed class ResponsePiiTests : IDisposable
         var allowed = ResponsePii.AllowedNames(["# a comment", "", "Profile.email  the signed-in user's own address"]);
         using var document = JsonDocument.Parse("""{"email":"a@example.com","emailAddress":"b@example.com"}""");
 
-        Assert.Equal(["emailAddress"], ResponsePii.Findings(document.RootElement, allowed));
-        Assert.Equal(["email", "emailAddress"], ResponsePii.Findings(document.RootElement, new HashSet<string>()));
+        Assert.Equal(["emailAddress"], ResponsePii.Findings(document.RootElement, Denied, allowed));
+        Assert.Equal(["email", "emailAddress"], ResponsePii.Findings(document.RootElement, Denied, new HashSet<string>()));
+    }
+
+    [Fact]
+    public void TheDenylistIsReadAsOneTokenPerLineAndMustNotBeEmpty()
+    {
+        var denylist = ResponsePii.Denylist(["# comment", "", "  Email ", "date_of_birth"]);
+
+        Assert.Matches(denylist, ResponsePii.Normalize("contactEmail"));
+        Assert.Matches(denylist, ResponsePii.Normalize("DateOfBirth"));
+        Assert.DoesNotMatch(denylist, ResponsePii.Normalize("message"));
+        Assert.Throws<InvalidDataException>(() => ResponsePii.Denylist(["# only comments"]));
     }
 }

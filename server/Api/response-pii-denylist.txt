@@ -1,0 +1,21 @@
+# Names that mean personal or secret data in a response field. One token per
+# line; a property matches when its name, lowercased with punctuation removed
+# (emailAddress, email_address and EMail all become "emailaddress"), contains
+# any token. Read by both halves of the response-DTO gate, so they cannot
+# disagree: scripts/check-response-pii.mjs (the OpenAPI document, part of
+# `make verify`) and server/Api.Tests/ResponsePiiTests.cs (what the endpoints
+# actually return). A field that is returned on purpose goes in
+# openapi-pii-allowlist.txt with a reason; the denylist only grows.
+email
+phone
+address
+zip
+postcode
+postalcode
+dob
+dateofbirth
+birthdate
+ssn
+password
+token
+secret

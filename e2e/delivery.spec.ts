@@ -90,6 +90,11 @@ for (const route of prerenderedRoutes) {
     expect(response?.status()).toBe(200);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.locator("#root")).not.toBeEmpty();
+    if (route === "/") {
+      // Exact, not just "an h1": a prerender that baked a placeholder or an
+      // error heading must not pass as the home page.
+      await expect(page.getByRole("heading", { name: "Modern Web App" })).toBeVisible();
+    }
 
     await context.close();
   });

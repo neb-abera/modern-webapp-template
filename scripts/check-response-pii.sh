@@ -7,8 +7,10 @@
 # serialized to whoever asks. The rule: a response is a record that lists its
 # fields. The committed OpenAPI document is what the server actually emits
 # (verify.sh's contract check proves that), so this reads its RESPONSE schemas
-# and fails on a property named like personal or secret data unless
-# server/Api/openapi-pii-allowlist.txt lists it with a reason.
+# and fails on a property named like personal or secret data (the tokens in
+# server/Api/response-pii-denylist.txt, which the runtime test
+# ResponsePiiTests.cs reads too) unless server/Api/openapi-pii-allowlist.txt
+# lists it with a reason.
 #
 # A checker that has never been seen to fail is not a checker, so the same run
 # plants three documents and requires the right answer on each:
@@ -28,9 +30,10 @@ NAME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
 
 docker run --rm --name "$NAME-check-pii" -v "$PWD":/src:ro "$NODE_IMAGE" sh -c '
   set -eu
+  denylist=/src/server/Api/response-pii-denylist.txt
   check="node /src/scripts/check-response-pii.mjs"
 
-  $check /src/server/Api/openapi.json /src/server/Api/openapi-pii-allowlist.txt
+  $check /src/server/Api/openapi.json /src/server/Api/openapi-pii-allowlist.txt "$denylist"
 
   mkdir /planted && cd /planted
   cat > leaky.json <<JSON
@@ -44,14 +47,14 @@ JSON
   echo "Contact.emailAddress  shown to the account owner on their own profile" > reasoned.txt
   echo "Contact.emailAddress" > unreasoned.txt
 
-  if $check leaky.json empty.txt 2> out.txt; then
+  if $check leaky.json empty.txt "$denylist" 2> out.txt; then
     echo "self-test FAILED: a response exposing Contact.emailAddress passed" >&2; exit 1
   fi
   grep -q "Contact.emailAddress" out.txt || { echo "self-test FAILED: the failure did not name the field" >&2; cat out.txt >&2; exit 1; }
-  if ! $check leaky.json reasoned.txt > /dev/null; then
+  if ! $check leaky.json reasoned.txt "$denylist" > /dev/null; then
     echo "self-test FAILED: an allowlisted field with a reason was refused" >&2; exit 1
   fi
-  if $check leaky.json unreasoned.txt 2> /dev/null; then
+  if $check leaky.json unreasoned.txt "$denylist" 2> /dev/null; then
     echo "self-test FAILED: an allowlist line without a reason was accepted" >&2; exit 1
   fi
   echo "self-test: planted leak caught, reasoned allowlist honoured, unreasoned allowlist refused"
