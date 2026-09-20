@@ -1,0 +1,22 @@
+extends: existence
+message: "'%s' is a hedge. Say it or cut it."
+level: error
+ignorecase: true
+tokens:
+  - perhaps
+  - maybe
+  - arguably
+  - somewhat
+  - sort of
+  - kind of
+  - it seems
+  - seemingly
+  - I think
+  - I believe
+  - I feel
+  - in my opinion
+  - to be honest
+  - pretty much
+  - more or less
+  - basically
+  - essentially

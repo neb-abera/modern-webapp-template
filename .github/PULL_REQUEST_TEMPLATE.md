@@ -23,9 +23,9 @@
 ## Migration review (delete if this change has no database migration)
 <!--- Indexes are the part of a migration nobody tests and everybody pays for. -->
 - [ ] Every new query's `WHERE` + `ORDER BY` pair has an index that serves both (equality columns first, then the sort column).
-- [ ] Composite keys: if the second column is ever filtered on its own, it has its own index — a composite index only serves its leading column(s).
+- [ ] Composite keys: if the second column is ever filtered on its own, it has its own index. A composite index only serves its leading column(s).
 - [ ] Every foreign key column is indexed.
-- [ ] The previous release still runs against the new schema (migrations apply before the new revision serves; destructive changes wait a release).
+- [ ] The previous release still runs against the new schema (migrations apply before the new revision serves, and destructive changes wait a release).
 - [ ] No `GRANT` was needed: the runtime role's default privileges cover new tables (`scripts/db/runtime-role.sql`).
 
 ## Checklist:

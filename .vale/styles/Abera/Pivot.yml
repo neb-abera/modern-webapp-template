@@ -1,0 +1,9 @@
+extends: existence
+message: "Rhetorical contrast. State the fact once."
+level: error
+ignorecase: true
+nonword: true
+tokens:
+  - '\bnot (?:just|only|merely|simply)\b'
+  - '\bnot\b[^.;:!?\n]{0,40}, but\b'
+  - ', (?:not|never) (?:[\w''-]+ ?){1,4}[.,;:]'

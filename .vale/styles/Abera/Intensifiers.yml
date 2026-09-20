@@ -1,0 +1,48 @@
+extends: existence
+message: "'%s' is an intensifier. Cut it, or give the number."
+level: error
+ignorecase: true
+tokens:
+  - very
+  - genuinely
+  - actually
+  - really
+  - truly
+  - extremely
+  - incredibly
+  - remarkably
+  - dramatically
+  - significantly
+  - deeply
+  - highly
+  - simply
+  - robust
+  - seamless
+  - seamlessly
+  - powerful
+  - comprehensive
+  - elegant
+  - elegantly
+  - beautiful
+  - beautifully
+  - effortless
+  - effortlessly
+  - blazing
+  - blazingly
+  - lightning-fast
+  - world-class
+  - best-in-class
+  - state-of-the-art
+  - cutting-edge
+  - bleeding-edge
+  - production-grade
+  - battle-tested
+  - rock-solid
+  - first-class
+  - game-changing
+  - crucial
+  - vital
+  - pivotal
+  - meticulous
+  - meticulously
+  - utmost
