@@ -1,58 +1,58 @@
 # Deploying
 
-This template does not assume a host, but it ships a proven pipeline shape for
-**Azure Container Apps** — the pattern running aberaTech and Facewoof in
-production — as [`deploy.yml.example`](../.github/workflows/deploy.yml.example).
+This template does not assume a host. It ships a pipeline for
+**Azure Container Apps**, the pattern running aberaTech and Facewoof in
+production, as [`deploy.yml.example`](../.github/workflows/deploy.yml.example).
 To use it: complete the one-time Azure setup below, rename the file to
-`deploy.yml`, and set the repository variables/secrets it names. Every rule in
-it was learned the hard way; keep them if you adapt it to another host.
+`deploy.yml`, and set the repository variables/secrets it names. Keep its
+rules if you adapt it to another host.
 
 ## The rules the pipeline encodes
 
 1. **Deploys are gated on the checks.** The workflow triggers on
    `workflow_run` of CI, and filters on
-   `workflow_run.conclusion == 'success'` — `workflow_run` fires whether or
-   not the checks passed, so a failed run must be filtered out rather than
-   assumed away. `workflow_dispatch` stays available for redeploying the
-   current main without a new commit.
+   `workflow_run.conclusion == 'success'`. `workflow_run` fires whether or
+   not the checks passed, so a failed run must be filtered out.
+   `workflow_dispatch` stays available for redeploying the current main
+   without a new commit.
 
 2. **One deploy at a time, never cancelled mid-flight**
    (`concurrency: deploy-production, cancel-in-progress: false`).
 
 3. **Secretless via OIDC.** `azure/login` exchanges the workflow's OIDC token
-   for credentials; no client secret exists anywhere. When creating the
-   federated credential, register **both** subject formats —
+   for credentials. No client secret exists anywhere. When creating the
+   federated credential, register **both** subject formats,
    `repo:<owner>/<repo>:ref:refs/heads/main` **and**
-   `repo:<owner>/<repo>:environment:production` — deploys fail with only one,
+   `repo:<owner>/<repo>:environment:production`. Deploys fail with only one,
    and the error does not say why.
 
 4. **Build on the runner, push with a narrow grant.** `az acr build` schedules
-   a task inside the registry and needs Contributor-level rights on it;
-   building on the runner and pushing keeps the deploy identity at
+   a task inside the registry and needs Contributor-level rights on it.
+   Building on the runner and pushing keeps the deploy identity at
    AcrPush + Reader.
 
-5. **Deploy by immutable tag** (`:$GITHUB_SHA`), not `:latest`, so a revision
+5. **Deploy by immutable tag** (`:$GITHUB_SHA`, not `:latest`), so a revision
    names exactly what it runs and rollback is redeploying a previous SHA.
 
 6. **Gate on post-deploy health.** `az containerapp update` returns when the
-   revision is *created*, not when it is *serving* — without polling
+   revision is *created*, before it is *serving*. Without polling
    `/healthz` on the public FQDN afterwards, a broken deploy looks green.
 
 7. **Give the app time to drain.** On every revision swap the old container
    gets SIGTERM, then SIGKILL when the grace period runs out. The app's
    shutdown timeout is 8 seconds (`HostOptions.ShutdownTimeout` in
-   `Program.cs`, pinned by a test) — chosen to fit inside Docker's 10-second
+   `Program.cs`, pinned by a test), chosen to fit inside Docker's 10-second
    default, the tightest window it runs under. Azure Container Apps defaults
-   `terminationGracePeriodSeconds` to 30; if you set it explicitly, keep it
-   above 10 so the drain window never shrinks below what the app expects.
+   `terminationGracePeriodSeconds` to 30. If you set it, keep it above 10 so
+   the drain window never shrinks below what the app expects.
 
 8. **If a CDN caches your responses** (e.g. Cloudflare in front of the app),
    the cache rule and the purge job in the pipeline only work as a set: a
-   cache rule without a purge on deploy serves stale pages, and neither half
-   is useful alone. The example ships a `purge-edge-cache` job that reads
-   `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_PURGE_TOKEN` secrets (a token scoped
-   to *Zone → Cache Purge* only) and skips with a warning until they exist —
-   so it is safe before Cloudflare is configured and correct after.
+   cache rule without a purge on deploy serves stale pages. The example ships
+   a `purge-edge-cache` job that reads `CLOUDFLARE_ZONE_ID` and
+   `CLOUDFLARE_PURGE_TOKEN` secrets (a token scoped to *Zone → Cache Purge*
+   only) and skips with a warning until they exist, so it is safe before
+   Cloudflare is configured and correct after.
 
 ## Settings the app is deployed with
 
@@ -61,18 +61,18 @@ overridden per environment with an environment variable (`:` becomes `__`).
 
 | Variable | Default | Set it to |
 | --- | --- | --- |
-| `HostAllowlist__Hosts` | empty | **Required outside Development:** the host names the app serves, in one comma-separated value — `www.example.com,example.com`; `*.example.io` matches any subdomain (not `example.io` itself, and not `notexample.io`). Any other `Host` header gets a bodyless 400 and security event 1007. Empty means "no filtering" in Development only; anywhere else the app **refuses to start**, so an unset variable stops a deploy instead of opening the app to every host. |
-| `ForwardedHeaders__TrustedHops` | `0` | The number of proxies in front of the app — next section. |
-| `Kestrel__Limits__MaxRequestBodySize` | `1048576` | Leave it. An endpoint that takes uploads raises its own limit with `RequestSizeLimitAttribute` metadata; raising this raises it for every endpoint. |
-| `RATE_LIMIT_PERMIT` | `100` | Requests per client per 10 s, on endpoints only — static files and `/healthz` are not counted. |
+| `HostAllowlist__Hosts` | empty | **Required outside Development:** the host names the app serves, in one comma-separated value, `www.example.com,example.com`. `*.example.io` matches any subdomain (not `example.io` itself, and not `notexample.io`). Any other `Host` header gets a bodyless 400 and security event 1007. Empty means "no filtering" in Development only. Anywhere else the app **refuses to start**, so an unset variable stops a deploy instead of opening the app to every host. |
+| `ForwardedHeaders__TrustedHops` | `0` | The number of proxies in front of the app (next section). |
+| `Kestrel__Limits__MaxRequestBodySize` | `1048576` | Leave it. An endpoint that takes uploads raises its own limit with `RequestSizeLimitAttribute` metadata. Raising this raises it for every endpoint. |
+| `RATE_LIMIT_PERMIT` | `100` | Requests per client per 10 s, on endpoints only. Static files and `/healthz` are not counted. |
 | `Logging__LogLevel__<category>` | see file | `Microsoft.AspNetCore.Authentication` and `.Authorization` stay at `Information`: that is the level the framework logs refused sign-ins and authorization failures at, and the usual `Microsoft.AspNetCore: Warning` hides them. |
 
 Health probes need nothing: `/healthz` is answered whatever the `Host`.
 Platform probes (Azure Container Apps, Kubernetes) address the container by
 pod IP, a name nobody can list in advance, and a filter that refused them
 would leave a new revision never turning ready. That is also why the
-framework's own `AllowedHosts` is left at `*` in `appsettings.json` — it sits
-at the front of the pipeline and cannot exempt a path — and
+framework's own `AllowedHosts` is left at `*` in `appsettings.json` (it sits
+at the front of the pipeline and cannot exempt a path) and
 `server/Api/HostAllowlist.cs` does the filtering instead. The post-deploy
 health gate polls `/healthz`, so the hostname it uses does not have to be
 listed either.
@@ -81,10 +81,10 @@ listed either.
 
 The rate limiter gives each client its own bucket, and the security log names
 the client that was refused. Behind a CDN and a cloud ingress the socket peer
-is the ingress, for every visitor — so unless the app is told how many proxies
+is the ingress, for every visitor. Unless the app is told how many proxies
 stand in front of it, all visitors share one bucket and one burst locks
 everyone out. `server/Api/ClientAddress.cs` is the single place the client
-address is resolved; it is configured with one number:
+address is resolved. It is configured with one number:
 
 | Setting (environment variable) | Value | When |
 | --- | --- | --- |
@@ -94,24 +94,24 @@ address is resolved; it is configured with one number:
 | `ForwardedHeaders__KnownProxies__0`, `…__1` | IP addresses | Optional second lock: a hop is honoured only when the address reporting it is listed. |
 | `ForwardedHeaders__KnownNetworks__0`, `…__1` | CIDR ranges | The same, for ranges (the CDN's published ranges, the ingress subnet). |
 
-The number is the count of proxies **you operate or contract**, not the number
-of entries in the header. Each proxy appends the peer it saw, so with two
-trusted hops the second entry from the right was written by infrastructure;
-anything further left is whatever the client chose to send, and is ignored. Set
-it too low and visitors share a bucket; set it too high and a client chooses
-its own bucket by writing the header itself.
+The number is the count of proxies **you operate or contract**. Each proxy
+appends the peer it saw, so with two trusted hops the second entry from the
+right was written by infrastructure. Anything further left is whatever the
+client chose to send, and is ignored. Set it too low and visitors share a
+bucket. Set it too high and a client chooses its own bucket by writing the
+header itself.
 
 Hop counting is only sound while **the origin accepts traffic from the proxy
 chain and nothing else**. Lock the container app's ingress to the CDN's
-published ranges (Cloudflare: <https://www.cloudflare.com/ips/>; Azure
-Container Apps: ingress IP restrictions, allow-list mode). With the origin
-open, anyone who finds its hostname connects with one hop fewer than you
-counted and their forged entry lands exactly where the app looks. If you cannot
-lock the origin, set `KnownNetworks` — a forged chain from an unlisted peer is
-then refused rather than believed.
+published ranges. Cloudflare publishes them at
+<https://www.cloudflare.com/ips/>. On Azure Container Apps, use ingress IP
+restrictions in allow-list mode. With the origin open, anyone who finds its
+hostname connects with one hop fewer than you counted and their forged entry
+lands exactly where the app looks. If you cannot lock the origin, set
+`KnownNetworks`. A forged chain from an unlisted peer is then refused.
 
 `deploy.yml.example` sets both from repository variables on every deploy:
-`ALLOWED_HOSTS` (required — the deploy stops if it is unset) and
+`ALLOWED_HOSTS` (required: the deploy stops if it is unset) and
 `TRUSTED_HOPS` (`0` when unset).
 
 IPv6 clients are bucketed per /64, the unit an ISP hands one subscriber.
@@ -120,24 +120,24 @@ IPv6 clients are bucketed per /64, the unit an ISP hands one subscriber.
 
 Client-side configuration (`import.meta.env.VITE_*`) is resolved when the
 bundle is **built**, so it must be passed as build args to `docker build` in
-the deploy — setting it on the running container does nothing. Values that
-ship in the bundle are visible to every browser by design: store them as
-repository *variables*, never secrets, and make the app degrade gracefully
-when they are unset so the deploy stays safe before they are configured.
+the deploy. Setting it on the running container does nothing. Values that
+ship in the bundle are visible to every browser by design. Store them as
+repository *variables*. Never put a secret in one. Make the app degrade
+gracefully when they are unset so the deploy stays safe before they are
+configured.
 
 ## Databases
 
-**Migrations are a deploy step, not something the app does on the way up.**
-The production image applies them and exits when run with `--migrate`
-(`server/Api/Migrations.cs`), and the pipeline runs that — as the *migrator*
-role — before the new revision takes traffic:
+**Migrations are a deploy step.** The production image applies them and exits
+when run with `--migrate` (`server/Api/Migrations.cs`), and the pipeline runs
+that, as the *migrator* role, before the new revision takes traffic:
 
 ```bash
 docker run --rm -e "ConnectionStrings__Default=$MIGRATOR_CONNECTION_STRING" \
   "$REGISTRY/$IMAGE:$GITHUB_SHA" --migrate
 ```
 
-`deploy.yml.example` has this step; it skips with a notice until the
+`deploy.yml.example` has this step. It skips with a notice until the
 `MIGRATOR_CONNECTION_STRING` secret exists, and a failed migration stops the
 deploy with the old revision still serving. Where the database is not
 reachable from the runner, run the same image and argument as a one-off job
@@ -150,12 +150,12 @@ Two roles instead:
 
 | Role | Used by | May |
 | --- | --- | --- |
-| migrator | the `--migrate` step only | own the tables; DDL |
-| runtime | the serving app | `SELECT`/`INSERT`/`UPDATE`/`DELETE` and sequence use — nothing else |
+| migrator | the `--migrate` step only | own the tables and run DDL |
+| runtime | the serving app | `SELECT`/`INSERT`/`UPDATE`/`DELETE` and sequence use, nothing else |
 
 [`scripts/db/runtime-role.sql`](../scripts/db/runtime-role.sql) sets the
 runtime role up (grants plus default privileges, so migrations never need a
 `GRANT`), and `make verify` proves it against the PostgreSQL that
-`compose.yaml` pins: rows work; `CREATE`, `ALTER`, `DROP` and `TRUNCATE` are
-refused. Write every migration so that the previous revision keeps working
-against the new schema — it is still serving while the step runs.
+`compose.yaml` pins: rows work, and `CREATE`, `ALTER`, `DROP` and `TRUNCATE`
+are refused. Write every migration so that the previous revision keeps working
+against the new schema. It is still serving while the step runs.

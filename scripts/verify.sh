@@ -11,35 +11,38 @@
 #      to the template's default branch — trivially so inside the template,
 #      which is the source (the checker first proves a drifted file and a
 #      missing file are both caught)
-#   3. server: build + unit tests (warnings as errors, locked-mode restore)
+#   3. prose: every tracked Markdown file passes the writing rules in
+#      .vale/styles/Abera (the checker first proves every rule fires on a
+#      fixture and that clean prose passes)
+#   4. server: build + unit tests (warnings as errors, locked-mode restore)
 #      + line coverage at or above SERVER_COVERAGE_MIN
-#   4. client: typecheck + lint (Biome) + unit tests + coverage thresholds
+#   5. client: typecheck + lint (Biome) + unit tests + coverage thresholds
 #      (vitest.config's coverage.thresholds fail the run on their own)
-#   5. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
+#   6. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
 #      generated client types (client/src/api-types.d.ts) match the code
-#   6. held majors: no npm dependency's next major is uninstallable and no
+#   7. held majors: no npm dependency's next major is uninstallable and no
 #      NuGet dependency's next major ships only a framework the project
 #      cannot consume, the two cases Dependabot cannot open a pull request
 #      for (scripts/check-held-majors.sh)
-#   7. response DTOs: no response schema in that spec has a field named like
+#   8. response DTOs: no response schema in that spec has a field named like
 #      personal or secret data, unless allowlisted with a reason (the checker
 #      plants a leaking spec and must catch it)
-#   8. database runtime role: scripts/db/runtime-role.sql, applied to a real
+#   9. database runtime role: scripts/db/runtime-role.sql, applied to a real
 #      PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
 #      checker over-privileges a second role and must catch it)
-#   9. the production image builds
-#  10. byte budget: that image's client build, in gzip bytes, is within
+#  10. the production image builds
+#  11. byte budget: that image's client build, in gzip bytes, is within
 #      client/byte-budget.json (the checker proves its boundary: exactly at
 #      the limit passes; one byte over, a missing artifact and a missing
 #      budget all fail)
-#  11. smoke: the running container serves client, API, health, security
+#  12. smoke: the running container serves client, API, health, security
 #      headers, refuses a Host it was not configured for (but answers
 #      /healthz on it), will not start with no hosts configured, runs as a
 #      non-root user, its own `--healthcheck` probe (the Dockerfile's
 #      HEALTHCHECK) says healthy against it and unhealthy against a dead
 #      port — and `--migrate` applies and exits instead of serving
-#  12. end-to-end: Playwright against the production container
-#  13. mutation canary: a planted server bug must fail the tests
+#  13. end-to-end: Playwright against the production container
+#  14. mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -70,7 +73,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=13
+CHECKS_TOTAL=14
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -214,6 +217,19 @@ if ./scripts/check-template-parity.sh --self-test 2>&1 | tee "$LOG" \
   pass "Shared files match the template (and the checker caught a planted drift)"
 else
   fail "Template parity (a shared file drifted from the template, or the checker's self-test)"
+fi
+
+banner "Prose: every tracked Markdown file passes the writing rules"
+# The self-test runs first, every time: one fixture carries one violation per
+# rule and every rule must fire on it, another is clean and must pass, so a
+# rule that has stopped matching is caught here rather than trusted.
+if ./scripts/check-prose.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-prose.sh >> "$LOG" 2>&1; then
+  grep -E '^self-test' "$LOG" || true
+  pass "Prose passes .vale/styles/Abera"
+else
+  tail -40 "$LOG"
+  fail "Prose (a rule violation in a Markdown file, or a broken self-test)"
 fi
 
 banner "Server: build + unit tests (warnings as errors) + coverage"

@@ -1,0 +1,41 @@
+extends: existence
+message: "'%s' is throat-clearing. Start with the fact."
+level: error
+ignorecase: true
+tokens:
+  - I made this guide
+  - in this guide
+  - in this document
+  - in this section
+  - in this article
+  - in this post
+  - this document describes
+  - this README
+  - this guide will
+  - welcome to
+  - let's
+  - let us
+  - note that
+  - please note
+  - it is worth noting
+  - it's worth noting
+  - it should be noted
+  - keep in mind
+  - as you can see
+  - as mentioned
+  - as we will see
+  - without further ado
+  - first and foremost
+  - last but not least
+  - in conclusion
+  - to summarize
+  - to sum up
+  - in summary
+  - needless to say
+  - it goes without saying
+  - feel free to
+  - don't hesitate to
+  - hope this helps
+  - happy coding
+  - stay tuned
+  - the bottom line

@@ -1,0 +1,55 @@
+extends: existence
+message: "'%s' is a word nobody says aloud. Name the thing."
+level: error
+ignorecase: true
+tokens:
+  - delve
+  - delves
+  - delving
+  - journey
+  - landscape
+  - empower
+  - empowers
+  - empowering
+  - foster
+  - fosters
+  - holistic
+  - synergy
+  - synergies
+  - unlock
+  - unlocks
+  - unlocking
+  - game-changer
+  - game changer
+  - paradigm
+  - revolutionary
+  - innovative
+  - next-generation
+  - tapestry
+  - testament
+  - underscores
+  - showcase
+  - showcases
+  - supercharge
+  - elevate
+  - elevates
+  - realm
+  - embark
+  - embarks
+  - multifaceted
+  - myriad
+  - plethora
+  - ever-evolving
+  - fast-paced
+  - in today's
+  - the world of
+  - look no further
+  - dive in
+  - deep dive
+  - dive into
+  - unpack
+  - at its core
+  - at the heart of
+  - a testament to
+  - the beauty of
+  - stands as

@@ -1,0 +1,7 @@
+extends: existence
+message: "No rhetorical questions. Give the answer."
+level: error
+nonword: true
+tokens:
+  - '\bThe (?:result|answer|catch|problem|upshot|takeaway|difference|goal|fix|verdict|lesson|point|reason)\?\s'
+  - '\bWhy\? '

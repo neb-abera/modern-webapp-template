@@ -1,4 +1,4 @@
-.PHONY: run dev ports shell contract verify test-server test-client e2e clean help load
+.PHONY: run dev ports shell contract verify prose test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -60,6 +60,10 @@ load: ## run the k6 load harness against the production-like app
 
 verify: ## run the full verification suite with a pass/fail tally
 	./scripts/verify.sh
+
+prose: ## lint every tracked Markdown file against the writing rules (.vale/styles/Abera)
+	./scripts/check-prose.sh --self-test
+	./scripts/check-prose.sh
 
 # Toolchain images are derived from the Dockerfile and e2e/package.json the
 # way verify.sh derives them, so the Makefile cannot drift from the images
