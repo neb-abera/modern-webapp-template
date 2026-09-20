@@ -82,5 +82,7 @@ fi
 if [ "$#" -gt 0 ]; then
   vale "$@"
 else
-  git ls-files -z -- '*.md' | xargs -0 scripts/check-prose.sh
+  # Every tracked Markdown file except the self-test fixtures, one of which
+  # fails by design.
+  git ls-files -z -- '*.md' ':(exclude).vale/fixtures/*' | xargs -0 scripts/check-prose.sh
 fi
