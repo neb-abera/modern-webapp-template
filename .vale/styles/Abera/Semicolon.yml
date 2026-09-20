@@ -1,0 +1,6 @@
+extends: existence
+message: "No semicolons. Full stop, new sentence."
+level: error
+nonword: true
+raw:
+  - '[A-Za-z0-9)"''”’]; '

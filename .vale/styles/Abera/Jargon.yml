@@ -1,0 +1,37 @@
+extends: substitution
+message: "Say '%s', not '%s'."
+level: error
+ignorecase: true
+swap:
+  leverage: use
+  leverages: uses
+  leveraging: using
+  utilise: use
+  utilize: use
+  utilises: uses
+  utilizes: uses
+  utilising: using
+  utilizing: using
+  facilitate: help
+  facilitates: helps
+  ensure: check that
+  ensures: checks that
+  ensuring: checking that
+  streamline: simplify
+  streamlines: simplifies
+  in order to: to
+  prior to: before
+  subsequent to: after
+  a number of: some
+  the majority of: most
+  at this point in time: now
+  in the event that: if
+  is able to: can
+  are able to: can
+  has the ability to: can
+  due to the fact that: because
+  for the purpose of: to
+  with regard to: about
+  in terms of: for
+  a wide range of: many
+  a variety of: several
