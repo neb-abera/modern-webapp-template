@@ -1,0 +1,40 @@
+extends: existence
+message: "'%s' is a cliché. Say what happened."
+level: error
+ignorecase: true
+tokens:
+  - under the hood
+  - out of the box
+  - low-hanging fruit
+  - moving parts
+  - pain point
+  - pain points
+  - sweet spot
+  - north star
+  - boil the ocean
+  - the hard way
+  - lipstick on a pig
+  - silver bullet
+  - secret sauce
+  - heavy lifting
+  - table stakes
+  - double-edged sword
+  - at the end of the day
+  - in a nutshell
+  - the name of the game
+  - wearing a costume
+  - sea change
+  - tip of the iceberg
+  - level playing field
+  - think outside the box
+  - hit the ground running
+  - peace of mind
+  - with flying colors
+  - bells and whistles
+  - rocket science
+  - from day one
+  - on day one
+  - elephant in the room
+  - circle back
+  - move the needle
+  - on the same page

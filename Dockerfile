@@ -66,6 +66,11 @@ FROM dev AS contract
 COPY --from=apitypes --chown=app:app /work/tools/api-types/node_modules /work/tools/api-types/node_modules
 CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true && cd client && npm run generate:api-types"]
 
+# Prose linter, for scripts/check-prose.sh. Never built into anything: the
+# stage exists so the image is a FROM line Dependabot sees and bumps, and the
+# script reads it from here rather than pinning a version of its own.
+FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c8857bc86b724a28e AS vale
+
 #
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
