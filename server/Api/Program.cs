@@ -125,6 +125,9 @@ builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationRefusals>();
 
+// One clock, injected, so a test can say what day it is (SecurityTxt.cs).
+builder.Services.AddSingleton(TimeProvider.System);
+
 var app = builder.Build();
 
 // Schema changes are a deploy step of their own, not something serving does on
@@ -220,6 +223,11 @@ app.UseStaticFiles(staticFiles);
 // they differed (prerendered pages all served the empty shell).
 app.UseRouting();
 
+// The health route and the API are answers, not files: never stored by a
+// browser or the edge. NoStoreResponses.cs says what an edge-cached
+// /healthz cost.
+app.UseNoStoreResponses();
+
 // After routing and after the static files, both on purpose. Static files
 // never reach this line, so a page load — the document plus every asset on
 // it — spends none of the visitor's permits; those are for requests that make
@@ -247,6 +255,10 @@ app.MapHealthChecks(HealthRoute.Path).DisableRateLimiting().AllowAnonymous();
 // the client's generated types are made from — an untyped Results.Ok would
 // leave the contract empty and the drift gate blind.
 app.MapGet("/api/hello", () => TypedResults.Ok(new Greeting("Hello from the API"))).AllowAnonymous();
+
+// Where to report a vulnerability, at the address scanners and researchers
+// look first. SecurityTxt.cs renders it; SECURITY.md says the same.
+app.MapSecurityTxt();
 
 // spa.html, not index.html: index.html carries the home page's prerendered
 // markup, and a client-rendered route served over it would flash the wrong

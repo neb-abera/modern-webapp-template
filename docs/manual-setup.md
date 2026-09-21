@@ -54,6 +54,12 @@ admin of the repo.
   Without the secrets the purge job warns and skips. With the cache rule but
   no purge, deploys serve stale pages for up to the rule's TTL.
 
+  The rule must exclude `/healthz`, `/api/*` and `/.well-known/*`. An edge
+  TTL override ignores the origin's `no-store`, and a probe answered from
+  the edge cannot see an outage: on abera.tech, 2026-09-21, `/healthz` came
+  back with an age of 83,725 seconds. Match the rule on HTML content type or
+  on the page paths. A rule that matches the whole host caches the probes.
+
 - **Tell the app its hostnames.** Set the `ALLOWED_HOSTS` repository variable
   (the deploy passes it to the container as `HostAllowlist__Hosts`) to the
   domains it serves, comma-separated: `www.example.com,example.com`, or

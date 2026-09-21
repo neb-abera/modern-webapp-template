@@ -35,6 +35,46 @@ public sealed class ApiTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // /healthz once came back from a CDN edge cache with an age of 83,725
+    // seconds. A probe that can be answered from a cache is not a probe, and
+    // an API answer held by a browser is stale by the next request.
+    [Theory]
+    [InlineData("/healthz")]
+    [InlineData("/api/hello")]
+    public async Task AnAnswerIsNeverStored(string path)
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString() ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SecurityTxtSaysWhereToReport()
+    {
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(SecurityTxt.Path, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Contact: " + SecurityTxt.Contact, body, StringComparison.Ordinal);
+        Assert.Contains("Contact: " + SecurityTxt.Advisories, body, StringComparison.Ordinal);
+        Assert.Equal("public, max-age=86400", response.Headers.CacheControl?.ToString());
+    }
+
+    [Fact]
+    public void SecurityTxtExpiresAYearFromTodayToTheDay()
+    {
+        // 18:30 UTC on the 21st, whatever the caller's offset says.
+        var text = SecurityTxt.Render(new DateTimeOffset(2026, 9, 21, 14, 30, 0, TimeSpan.FromHours(-4)));
+
+        Assert.Contains("Expires: 2027-09-21T00:00:00Z", text, StringComparison.Ordinal);
+    }
+
     // Table-driven example: adding a new failing case (TDD's "red" step) is a
     // one-line change.
     [Theory]
