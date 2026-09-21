@@ -124,6 +124,21 @@ public sealed class PrerenderPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task AFileNobodyShippedIsABare404AndNotASignIn()
+    {
+        // A dotted path matches no endpoint: the fallback is "{*path:nonfile}".
+        // On abera.tech that left /robots.txt to the fallback authorization
+        // policy, which answered 401. Here AuthorizationRefusals lets an
+        // endpoint-less request through to the 404; this pins it.
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/robots-nobody-shipped.txt", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("empty shell", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AHeadRequestForAPrerenderedRouteIsServedWithoutARedirect()
     {
         // Link checkers and crawlers probe with HEAD; skipping HEAD in the

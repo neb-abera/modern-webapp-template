@@ -53,7 +53,9 @@ every change, and CI runs the same script.
   that does not declare who may call it. A host allowlist that exempts the
   health route and refuses to start outside Development without one. A 1 MB
   request body limit. A security event log with stable ids and no headers,
-  bodies or PII. `UrlAllowlist` and `WebhookSignature` helpers, tested.
+  bodies or PII. `/healthz` and `/api` answers are `no-store`, so no edge
+  or browser can hold one. `/.well-known/security.txt` and `robots.txt`
+  are served from the first deploy. `UrlAllowlist` and `WebhookSignature` helpers, tested.
   Non-root containers, CodeQL (C#, TypeScript, workflows) on every PR,
   SHA-pinned actions, digest-pinned images, least-privilege tokens.
   [SECURITY.md](SECURITY.md) has the inventory.
