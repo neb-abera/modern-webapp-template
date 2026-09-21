@@ -71,12 +71,13 @@ else
   # template contact link) point at the generated repository, not the
   # template.
   NEW_REPO="$owner_repo" OLD_REPO="$TEMPLATE_OWNER_REPO" perl -pi -e 's#\Q$ENV{OLD_REPO}\E#$ENV{NEW_REPO}#g' \
-    README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
+    README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml server/Api/SecurityTxt.cs
   if git diff --quiet; then
     done_ "already renamed"
   else
     git add client/index.html client/src/App.tsx client/tests/entry-server.test.tsx \
-      e2e/smoke.spec.ts e2e/delivery.spec.ts README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml
+      e2e/smoke.spec.ts e2e/delivery.spec.ts README.md SECURITY.md .github/ISSUE_TEMPLATE/config.yml \
+      server/Api/SecurityTxt.cs
     git commit -q -m "Rename app after repository ($repo) via scripts/setup.sh"
     if git push -q origin "HEAD:$default_branch" 2> /dev/null; then
       done_ "renamed and pushed to $default_branch"
