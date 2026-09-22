@@ -61,6 +61,33 @@ Projects generated from this template ship with:
   container, on every PR and weekly (`security-scan.yml`). The two accepted
   ZAP findings are documented in [.zap/rules.tsv](.zap/rules.tsv).
 
+## Standards this template is checked against
+
+The hardening above is the machinery. A project made from this template
+carries a table like the one below in its own `SECURITY.md`, naming for
+each published control the gate that answers it, so a reviewer with the
+standard in hand can find the evidence, and so a control with no
+machinery is written down as a deviation rather than forgotten. The
+application standard is DISA's Application Security and Development STIG
+(V6R4, 2025-09-09). Identity controls are NIST SP 800-63B. Supply chain is
+NIST SP 800-218 (SSDF) and the OpenSSF Scorecard checks.
+
+| Control | Requirement | Here | Evidence |
+|---|---|---|---|
+| ASD V-222425 | Enforce approved authorizations | Met | Fallback policy denies by default. A test fails the build on an endpoint that declares nothing (`AuthorizationTests`) |
+| ASD V-222430 | Execute without excessive permissions | Met | Non-root chiseled image. The runtime database role has DML only and a test proves DDL is refused (verify check 9) |
+| ASD V-222441 to V-222449, V-222462 | Audit refusals with time, source address and outcome | Met | Security events 1001 to 1007 (below), with the resolved client address |
+| ASD V-222444 | No sensitive data in logs | Met | Events carry no path, query, header, cookie or account. Tests assert what is omitted |
+| ASD V-222594, V-222667 | Restrict denial of service | Met | Rate limits on every endpoint, partitioned by the real client address. Body limits |
+| ASD V-222602 | Protect from XSS | Met | React escaping. CSP with no `unsafe-inline` for scripts. The property test above shows arbitrary API text renders as text |
+| ASD V-222606, V-222609 | Validate all input. No input-handling vulnerabilities | Partly met | Typed DTOs and body limits. The fast-check harness is where a project's parsers get their properties |
+| ASD V-222614, V-222658 | Patches current, products supported | Met | Dependabot on every ecosystem, auto-merge for non-majors, the held-majors gate (verify check 7) |
+| ASD V-222645 | Application files hashed before deployment | Met | Build provenance attestation and SBOM on every release |
+| ASD V-222648 | Code review | Met | Every change is a pull request with CodeQL, Trivy, ZAP, dependency review and Scorecard |
+| ASD V-222575 to V-222583 | Session cookie protections | Prescribed | No sign-in ships. `docs/manual-setup.md` §7 prescribes `__Host-`, `Secure`, `HttpOnly`, `SameSite` and key-ring persistence on the day one is added |
+| ASD V-222655 | Threat model per release | Deviation, tracked | No written threat model in the template |
+| SP 800-218 PW.4, PW.7, PW.8 | Reuse well-secured components, review code, test executable code | Met | Pinned images and actions, locked restores, the fourteen verify checks with planted defects |
+
 ## Security event log
 
 Security-relevant refusals are logged under the category `Api.SecurityEvents`
