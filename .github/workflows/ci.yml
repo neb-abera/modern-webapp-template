@@ -12,10 +12,12 @@ on:
   push:
     branches: [main, master]
 
-# A newer push to the same branch makes the running check obsolete.
+# A newer push to a pull request makes the running check obsolete. A newer
+# push to the default branch does not: cancelling it left a merge commit
+# with no checks and no scan (aberaTech #169, 2026-09-18).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege token: read-only for all CI jobs.
 permissions:
