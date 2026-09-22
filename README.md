@@ -18,6 +18,14 @@ every change, and CI runs the same script.
 * **Test-driven.** xUnit v3 API tests, Vitest and Testing Library component
   tests, and a Playwright suite that runs against the production image.
 
+* **Property tests, with fast-check.** `client/tests/App.property.test.tsx`
+  states one property of the page over generated input and runs in the same
+  Vitest pass as everything else. It is the harness a project copies for its
+  own parsers: anything that reads untrusted bytes gets a property here,
+  the way the C++ and Rust templates give it a libFuzzer or cargo-fuzz
+  target. Seeded, bounded, and a failing run prints the seed and the
+  shrunk input.
+
 * **One verification suite.** `make verify` runs fourteen checks with a
   pass/fail tally. CI runs the same script. Each checker plants the defect it
   exists to catch on every run, so a checker that can no longer fail is
