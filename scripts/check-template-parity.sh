@@ -54,12 +54,10 @@ check() (
     branch="$TEMPLATE_PARITY_SOURCE"
     base="$TEMPLATE_PARITY_SOURCE"
   else
-    if ! api="$(curl -fsSL --retry 2 "https://api.github.com/repos/$template")"; then
-      echo "error: could not reach api.github.com for $template; an outage, not drift" >&2
-      exit 2
-    fi
-    branch="$(sed -n 's/.*"default_branch": *"\([^"]*\)".*/\1/p' <<< "$api")"
-    [ -n "$branch" ] || { echo "error: could not read the default branch of $template" >&2; exit 2; }
+    # HEAD on raw.githubusercontent.com is the default branch. Asking
+    # api.github.com for its name cost one unauthenticated call per run, and
+    # the runner address hit the hourly limit with a 403 on 2026-09-21.
+    branch="HEAD"
     base="https://raw.githubusercontent.com/$template/$branch"
   fi
 
