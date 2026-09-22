@@ -13,9 +13,12 @@ on:
     # Weekly scan so new queries run even without commits
     - cron: "30 6 * * 1"
 
+# A newer push to a pull request makes the running check obsolete. A newer
+# push to the default branch does not: cancelling it left a merge commit
+# with no checks and no scan (aberaTech #169, 2026-09-18).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
