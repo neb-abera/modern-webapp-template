@@ -85,7 +85,7 @@ NIST SP 800-218 (SSDF) and the OpenSSF Scorecard checks.
 | ASD V-222645 | Application files hashed before deployment | Met | Build provenance attestation and SBOM on every release |
 | ASD V-222648 | Code review | Met | Every change is a pull request with CodeQL, Trivy, ZAP, dependency review and Scorecard |
 | ASD V-222575 to V-222583 | Session cookie protections | Prescribed | No sign-in ships. `docs/manual-setup.md` §7 prescribes `__Host-`, `Secure`, `HttpOnly`, `SameSite` and key-ring persistence on the day one is added |
-| ASD V-222655 | Threat model per release | Deviation, tracked | No written threat model in the template |
+| ASD V-222655 | Threat model per release | Met | `docs/threat-model.md`: assets, entry points, trust boundaries, each threat with its answer and the gate that holds it. A project copies it and reviews it with every release |
 | SP 800-218 PW.4, PW.7, PW.8 | Reuse well-secured components, review code, test executable code | Met | Pinned images and actions, locked restores, the fourteen verify checks with planted defects |
 
 ## Security event log

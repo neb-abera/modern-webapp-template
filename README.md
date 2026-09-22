@@ -18,6 +18,11 @@ every change, and CI runs the same script.
 * **Test-driven.** xUnit v3 API tests, Vitest and Testing Library component
   tests, and a Playwright suite that runs against the production image.
 
+* **A threat model.** [docs/threat-model.md](docs/threat-model.md) names
+  the assets, the entry points and every threat with the gate that answers
+  it. A project copies it, fills in its own rows, and reviews it with each
+  release. A new entry point is a row there before it is a feature.
+
 * **Property tests, with fast-check.** `client/tests/App.property.test.tsx`
   states one property of the page over generated input and runs in the same
   Vitest pass as everything else. It is the harness a project copies for its
