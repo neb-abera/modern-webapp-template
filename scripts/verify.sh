@@ -219,17 +219,23 @@ else
   fail "Template parity (a shared file drifted from the template, or the checker's self-test)"
 fi
 
-banner "Prose: every tracked Markdown file passes the writing rules"
+banner "Prose: the Markdown and the built pages pass the writing rules"
 # The self-test runs first, every time: one fixture carries one violation per
 # rule and every rule must fire on it, another is clean and must pass, so a
 # rule that has stopped matching is caught here rather than trusted.
+#
+# Then the pages, through the `pageprose` stage: the prerendered HTML the
+# image ships, checked as a reader is given it rather than as source. A
+# README lints and the page beside it does not is how a line of copy that
+# breaks every rule stays live.
 if ./scripts/check-prose.sh --self-test > "$LOG" 2>&1 \
-   && ./scripts/check-prose.sh >> "$LOG" 2>&1; then
+   && ./scripts/check-prose.sh >> "$LOG" 2>&1 \
+   && docker build --target pageprose -t "$NAME-pageprose" . >> "$LOG" 2>&1; then
   grep -E '^self-test' "$LOG" || true
-  pass "Prose passes .vale/styles/Abera"
+  pass "Prose passes .vale/styles/Abera, in the Markdown and on the pages"
 else
   tail -40 "$LOG"
-  fail "Prose (a rule violation in a Markdown file, or a broken self-test)"
+  fail "Prose (a rule violation in a Markdown file or a built page, or a broken self-test)"
 fi
 
 banner "Server: build + unit tests (warnings as errors) + coverage"
