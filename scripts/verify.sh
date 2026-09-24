@@ -290,7 +290,10 @@ if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/ro
     cp -r /src /w
     cd /w/server
     dotnet build Api -c Release -p:RestoreLockedMode=true
-    cp Api/openapi.json /out/openapi.json
+    # install rather than cp: the file inherits the mode it had in the
+    # checkout, and a tree checked out under a umask of 007 hands back a
+    # root-owned 640 file that the diff below cannot read.
+    install -m 644 Api/openapi.json /out/openapi.json
   ' > "$LOG" 2>&1 \
    && docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-npm:/npm-cache" \
         -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
@@ -299,6 +302,7 @@ if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/ro
     cd /w
     npm ci --no-audit --no-fund
     node_modules/.bin/openapi-typescript /out/openapi.json --output /out/api-types.d.ts
+    chmod 644 /out/api-types.d.ts
   ' >> "$LOG" 2>&1 \
    && diff -u server/Api/openapi.json "$CONTRACT_OUT/openapi.json" \
    && diff -u client/src/api-types.d.ts "$CONTRACT_OUT/api-types.d.ts"; then

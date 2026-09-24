@@ -12,6 +12,17 @@ for line in sys.stdin:
 endef
 export PRINT_HELP_PYSCRIPT
 
+# Who the containers that mount this directory run as. The dev image's own
+# `app` user is neither the owner of this tree nor in its group, so on a
+# machine whose umask is 007 it cannot read the checkout at all: `make
+# contract` reported "Project file does not exist" for a file sitting right
+# there. Anything it writes would be owned by that user too, which the owner
+# of the checkout then cannot delete.
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
+export HOST_UID
+export HOST_GID
+
 # Docker image/container names derive from the checkout directory, so
 # projects generated from this template need no edits here.
 IMAGE := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
@@ -51,7 +62,14 @@ shell: ## open a development shell inside the toolchain image
 	docker rm -f $(IMAGE)-dev 2>/dev/null || true
 	docker run --rm -it --name $(IMAGE)-dev -v $(CURDIR):/work -w /work $(IMAGE)-dev:latest bash
 
+# The compose service mounts an anonymous volume over
+# tools/api-types/node_modules, to keep the bind mount from hiding the modules
+# baked into the image. Docker creates that mount point in this tree, as root,
+# if it is missing, leaving a root-owned directory the owner of the checkout
+# can neither remove nor chmod. Made here first, as the user who owns
+# everything else.
 contract: ## regenerate server/Api/openapi.json and client/src/api-types.d.ts from the code
+	@mkdir -p tools/api-types/node_modules
 	docker compose run --rm --build contract
 
 load: ## run the k6 load harness against the production-like app
