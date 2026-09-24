@@ -77,8 +77,15 @@ FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c
 #
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02 AS runtime
 WORKDIR /app
-COPY --from=server-build /out ./
-COPY --from=client-build /build/client/dist ./wwwroot
+# Owned by the user the app runs as. Without the --chown the mode travels
+# from the build context: a developer whose umask is 007 checks
+# appsettings.json out as rw-rw----, dotnet publish carries that through, and
+# the image starts as APP_UID against a file it cannot read. The container
+# exits and the e2e suite reports the app as down. A CI runner checks out
+# world-readable and never sees it. Ownership rather than a chmod: the image
+# should not care what umask built it.
+COPY --from=server-build --chown=$APP_UID:$APP_UID /out ./
+COPY --from=client-build --chown=$APP_UID:$APP_UID /build/client/dist ./wwwroot
 # The chiseled base already defaults to its non-root user (uid 1654, exported
 # as APP_UID), but only implicitly. Declare it, so the claim survives a base
 # image change — and verify.sh's smoke check asserts the built image's
