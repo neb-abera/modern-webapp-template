@@ -130,6 +130,40 @@ jobs:
   # Lint the linters: the workflows and shell scripts every other gate is
   # built out of get no checks from the app toolchain, so a typo'd `if:`
   # or an unquoted variable in verify.sh fails silently until it matters.
+  # The commit-msg hook and the Claude PreToolUse gate both run on the machine
+  # making the commit, so a commit made anywhere they are not installed reaches
+  # a pull request untouched. On 2026-09-24 a branch cut from a pre-rewrite
+  # master was merged and put 45 stripped attribution lines back on the default
+  # branch. This runs where the merge happens.
+  #
+  # fetch-depth: 0 because the check reads every commit the pull request would
+  # add, and a shallow clone has no merge base to measure that from.
+  attribution:
+    name: attribution (no AI credit in commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: prove the check can fail
+        run: ./scripts/check-attribution.sh --self-test
+
+      - name: no commit in this pull request credits an AI
+        run: ./scripts/check-attribution.sh "origin/${GITHUB_BASE_REF}..HEAD"
+
   # actionlint validates the workflow files (delegating embedded run: blocks
   # to shellcheck); shellcheck covers scripts/*.sh and scripts/db/*.sh. Both binaries are
   # version- and checksum-pinned so this job runs exactly what was reviewed.
