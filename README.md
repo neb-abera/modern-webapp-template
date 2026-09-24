@@ -84,8 +84,10 @@ every change, and CI runs the same script.
   compose profile pinned by digest, and the serving role is proven on every
   run unable to `CREATE`, `ALTER` or `DROP`.
 
-* **Prose is linted.** `make prose` runs Vale with the rules in
-  `.vale/styles/Abera` over every Markdown file. Check 3 of the suite.
+* **Prose is linted, on the pages too.** `make prose` runs Vale with the
+  rules in `.vale/styles/Abera` over every Markdown file, then over the
+  prerendered HTML the image ships, as a reader is given it. Check 3 of the
+  suite.
 
 * **Toolchain.** .NET 10 LTS, React 19, Vite 8, Vitest 4, TypeScript 7,
   Biome 2, Playwright, Node 26.
