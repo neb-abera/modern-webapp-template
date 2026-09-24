@@ -47,6 +47,9 @@ services:
     build:
       context: .
       target: dev
+    # As the user who owns the checkout: the image's own user can neither read
+    # nor write a tree left at rw-rw---- by a umask of 007 (Makefile says more).
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     command: dotnet watch --project Api --non-interactive
     working_dir: /work/server
     environment:
@@ -61,6 +64,7 @@ services:
     build:
       context: .
       target: dev
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     command: sh -c "npm install && npm run dev"
     working_dir: /work/client
     environment:
@@ -80,6 +84,11 @@ services:
     build:
       context: .
       target: contract
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    environment:
+      HOME: /tmp
+      DOTNET_CLI_HOME: /tmp
+      NUGET_PACKAGES: /tmp/nuget
     volumes:
       - .:/work
       - /work/tools/api-types/node_modules
