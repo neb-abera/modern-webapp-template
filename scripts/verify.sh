@@ -73,7 +73,7 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=14
+CHECKS_TOTAL=15
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -236,6 +236,24 @@ if ./scripts/check-prose.sh --self-test > "$LOG" 2>&1 \
 else
   tail -40 "$LOG"
   fail "Prose (a rule violation in a Markdown file or a built page, or a broken self-test)"
+fi
+
+banner "Attribution: no commit on this branch credits an AI"
+# The self-test first, as everywhere else: it plants a trailer and a
+# generated-with line in throwaway repositories and requires both to be
+# refused, then requires a clean range to pass.
+#
+# Then the branch itself. The commit-msg hook and the Claude PreToolUse gate
+# both run on the machine making the commit, so neither sees a commit made
+# anywhere they are not installed. This is the one that runs where the merge
+# happens.
+if ./scripts/check-attribution.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-attribution.sh >> "$LOG" 2>&1; then
+  grep -E '^check-attribution|^attribution:' "$LOG" || true
+  pass "No commit on this branch credits an AI"
+else
+  tail -30 "$LOG"
+  fail "Attribution (a commit carries an AI credit, or a broken self-test)"
 fi
 
 banner "Server: build + unit tests (warnings as errors) + coverage"
