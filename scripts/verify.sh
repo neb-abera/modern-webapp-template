@@ -487,14 +487,23 @@ cp server/Api/Program.cs "$BACKUP"
 restore_canary() { cp "$BACKUP" server/Api/Program.cs; rm -f "$BACKUP"; }
 perl -pi -e 's/Hello from the API/Goodbye from the API/' server/Api/Program.cs
 if ! cmp -s server/Api/Program.cs "$BACKUP"; then
-  if server_tests > "$LOG" 2>&1; then
+  server_tests > "$LOG" 2>&1
+  # The exit code alone cannot tell a failing test from a build that never
+  # produced one, and both are non-zero. So read the reported failure count:
+  # a planted bug that does not compile measures nothing, and treating it as
+  # "the tests caught it" is how this check used to pass on a broken tree.
+  caught=$(server_failed)
+  if [ -z "$caught" ]; then
+    restore_canary
+    tail -30 "$LOG"
+    fail "Mutation canary (the test run reported no results at all, so the planted bug was never measured; the build is broken)"
+  elif [ "$caught" -eq 0 ]; then
     restore_canary
     fail "Mutation canary (tests did NOT catch the planted bug!)"
   else
-    caught=$(server_failed)
     restore_canary
-    echo "planted a wrong greeting; ${caught:-some} tests failed as they should, then restored"
-    pass "Mutation canary: tests caught the planted bug (${caught:-?} failures)"
+    echo "planted a wrong greeting; $caught tests failed as they should, then restored"
+    pass "Mutation canary: tests caught the planted bug ($caught failures)"
   fi
 else
   restore_canary
