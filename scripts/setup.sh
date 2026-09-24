@@ -122,7 +122,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["verify", "lint (actionlint + shellcheck)", "dependency review", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)", "container scan (trivy)", "dast (ZAP baseline)"]
+    "contexts": ["verify", "attribution (no AI credit in commits)", "lint (actionlint + shellcheck)", "dependency review", "analyze (csharp)", "analyze (javascript-typescript)", "analyze (actions)", "container scan (trivy)", "dast (ZAP baseline)"]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": null,
@@ -131,7 +131,7 @@ gh api -X PUT "repos/$owner_repo/branches/$default_branch/protection" --input - 
   "allow_deletions": false
 }
 JSON
-done_ "verify + lint + dependency review + CodeQL + trivy + ZAP checks required, strict, enforced for admins"
+done_ "verify + attribution + lint + dependency review + CodeQL + trivy + ZAP checks required, strict, enforced for admins"
 
 #
 # 4. Commit signing — verified commits, out of the box
