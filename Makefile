@@ -79,9 +79,10 @@ load: ## run the k6 load harness against the production-like app
 verify: ## run the full verification suite with a pass/fail tally
 	./scripts/verify.sh
 
-prose: ## lint every tracked Markdown file against the writing rules (.vale/styles/Abera)
+prose: ## lint the Markdown and the built pages against the writing rules (.vale/styles/Abera)
 	./scripts/check-prose.sh --self-test
 	./scripts/check-prose.sh
+	docker build --target pageprose .
 
 # Toolchain images are derived from the Dockerfile and e2e/package.json the
 # way verify.sh derives them, so the Makefile cannot drift from the images

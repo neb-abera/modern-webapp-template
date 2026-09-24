@@ -71,6 +71,25 @@ CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true &
 # script reads it from here rather than pinning a version of its own.
 FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c8857bc86b724a28e AS vale
 
+# The same rules, on the pages a reader is given rather than on the Markdown
+# beside them. A leaf: nothing ships from here.
+#
+# The fixtures first, every time: the failing one must fail and the clean one
+# must pass, so a rule or a config path that has stopped working is caught
+# here rather than trusted. Then every prerendered page. spa.html is the
+# empty shell the server falls back to and carries no copy.
+#
+#   docker build --target pageprose .
+#   make prose
+FROM vale AS pageprose
+COPY --from=client-build /build/client/dist /dist
+COPY [".vale.ini", "/prose/.vale.ini"]
+COPY [".vale/", "/prose/.vale/"]
+RUN ! vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/fails.md > /dev/null \
+    && vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/passes.md \
+    && find /dist -name '*.html' ! -name spa.html -print0 \
+    | xargs -0 vale --config=/prose/.vale.ini --output=line
+
 #
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
