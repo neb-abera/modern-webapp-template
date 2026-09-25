@@ -4,9 +4,9 @@
 # pass/fail count and a final summary. Everything runs in containers, so the
 # host needs only Docker and git. This mirrors what CI gates before a merge:
 #
-#   1. required checks: branch protection and the PR-gating workflows agree
-#      (the checker first proves a renamed context and a lost pull_request
-#      trigger are both caught)
+#   1. required checks: .github/required-checks and the pull-request jobs
+#      agree (the checker first proves a renamed check, a lost pull_request
+#      trigger and an unlisted job are all caught)
 #   2. template parity: every file .template-parity lists is byte-identical
 #      to the template's default branch — trivially so inside the template,
 #      which is the source (the checker first proves a drifted file and a
@@ -197,13 +197,13 @@ server_tests() {
 server_passed() { grep -Eo 'succeeded: [0-9]+|Passed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 server_failed() { grep -Eo 'failed: [0-9]+|Failed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 
-banner "Required checks: setup.sh's contexts match the PR-gating workflows"
+banner "Required checks: .github/required-checks matches the pull-request jobs"
 # The self-test runs first, every time, here and before every other checker
 # that has one: a check that has lost the ability to fail is caught rather
 # than trusted.
 if ./scripts/check-required-contexts.sh --self-test 2>&1 | tee "$LOG" \
    && ./scripts/check-required-contexts.sh 2>&1 | tee -a "$LOG"; then
-  pass "Branch-protection contexts and PR-gating job names agree (and the checker caught a renamed context)"
+  pass "Required checks and pull-request job names agree (and the checker caught a renamed check)"
 else
   fail "Required-checks drift guard (a context/job mismatch, or the checker's self-test)"
 fi
