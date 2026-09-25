@@ -4,6 +4,8 @@
 #
 #   ./scripts/setup.sh              set up the repository named by `origin`
 #   ./scripts/setup.sh --self-test  prove the rename and the settings work
+#   ./scripts/setup.sh --self-test --build
+#                                   and build and test the renamed copy
 #
 # What it does:
 #   1. renames the app after your repository (page title, heading, the unit
@@ -29,6 +31,11 @@
 # settings and the required checks. Each of those assertions is then shown
 # to fail on a planted defect: a leftover template name, and a PATCH that
 # no longer turns on the Update branch button.
+#
+# --build (`make generate`, and the CI job `generate`) then builds the
+# renamed copy's production image and runs its server, client and
+# end-to-end tests against it, in the images verify.sh uses. The copy's
+# tests expect the new name, so a rename that misses a file fails here.
 
 set -euo pipefail
 
@@ -103,8 +110,49 @@ settings_problems() {
     || echo "branch protection did not require exactly .github/required-checks: $want"
 }
 
+# build_and_test <tree> <name>: the production image of <tree>, then its
+# server, client and end-to-end tests, in the images verify.sh derives.
+# Containers, network and image carry <name>, and are removed on the way out.
+build_and_test() (
+  local tree="$1" name="$2" sdk node pw
+  set -euo pipefail
+  cd "$tree"
+  sdk="$(sed -n 's|^FROM \(mcr\.microsoft\.com/dotnet/sdk:[^ ]*\) AS server-build$|\1|p' Dockerfile)"
+  node="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-base$|\1|p' Dockerfile)"
+  pw="mcr.microsoft.com/playwright:v$(sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)-noble"
+  if [ -z "$sdk" ] || [ -z "$node" ]; then echo "error: could not derive the toolchain images" >&2; exit 1; fi
+  # shellcheck disable=SC2064 # expand now: the names are fixed
+  trap "docker rm -f '$name-app' > /dev/null 2>&1; docker network rm '$name-net' > /dev/null 2>&1; docker image rm '$name:latest' > /dev/null 2>&1" EXIT
+
+  step "Building the renamed copy's production image"
+  # shellcheck disable=SC2086 # a list of flags, as in verify.sh
+  docker build ${VERIFY_DOCKER_BUILD_ARGS:-} -t "$name:latest" .
+
+  step "Server tests of the renamed copy"
+  docker run --rm -v "$tree":/src:ro -v "$name-nuget:/root/.nuget" "$sdk" \
+    bash -c 'cp -r /src /w && cd /w/server && dotnet test Api.Tests -c Release -p:RestoreLockedMode=true'
+
+  step "Client typecheck and tests of the renamed copy"
+  docker run --rm -v "$tree":/src:ro -v "$name-npm:/npm-cache" -e npm_config_cache=/npm-cache "$node" \
+    sh -c 'cp -r /src/client /w && cd /w && npm ci --no-audit --no-fund && npm run typecheck && npm run test'
+
+  step "End-to-end tests against the renamed copy"
+  docker network create "$name-net" > /dev/null
+  docker run -d --rm --name "$name-app" --network "$name-net" \
+    -e "HostAllowlist__Hosts=$name-app" "$name:latest" > /dev/null
+  docker run --rm --network "$name-net" -v "$tree":/src:ro -v "$name-npm:/npm-cache" \
+    -e npm_config_cache=/npm-cache -e E2E_BASE_URL="http://$name-app:8080" -e CI="${CI:-}" "$pw" bash -c '
+      set -e
+      mkdir -p /w/client/src
+      cp -r /src/e2e /w/e2e
+      cp /src/client/src/prerenderedRoutes.ts /w/client/src/
+      cd /w/e2e
+      npm ci --no-audit --no-fund
+      npx playwright test'
+)
+
 self_test() {
-  local dir src failed=0 problems leftovers f
+  local dir src failed=0 problems leftovers f build="${1:-}" name
   src="$PWD"
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064 # expand now: the directory name is fixed
@@ -181,13 +229,28 @@ STUB
   if [ "$failed" -eq 0 ]; then
     echo "self-test: the rename leaves no template name, the settings are sent, and both checks caught their planted defect"
   fi
+
+  # 3. The renamed copy builds and passes its own tests.
+  if [ "$build" = --build ] && [ "$failed" -eq 0 ]; then
+    name="$(basename "$src" | tr '[:upper:]' '[:lower:]')-generated"
+    if build_and_test "$dir/generated" "$name"; then
+      echo "self-test: ok: the renamed copy builds and passes its server, client and end-to-end tests"
+    else
+      fail_ "the renamed copy did not build or did not pass its tests (output above)"
+    fi
+  fi
   return "$failed"
 }
 
-if [ "${1:-}" = --self-test ]; then
-  self_test
-  exit
-fi
+case "${1:-}" in
+  --self-test)
+    case "${2:-}" in
+      ""|--build) self_test "${2:-}"; exit ;;
+      *) echo "usage: $0 [--self-test [--build]]" >&2; exit 2 ;;
+    esac ;;
+  "") ;;
+  *) echo "usage: $0 [--self-test [--build]]" >&2; exit 2 ;;
+esac
 
 #
 # Detect the repository
