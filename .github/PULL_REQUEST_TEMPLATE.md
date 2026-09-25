@@ -1,21 +1,20 @@
-<!--- Provide a general summary of your changes in the Title above -->
+<!--- A general summary of the change goes in the title above -->
 
 ## Description
-<!--- Describe your changes in detail -->
+<!--- What changed -->
 
 ## Motivation and Context
-<!--- Why is this change required? What problem does it solve? -->
-<!--- If it fixes an open issue, please link to the issue here. -->
+<!--- Why it is needed and what problem it solves. Link the issue it fixes. -->
 
 ## How Has This Been Tested?
-<!--- Please describe in detail how you tested your changes. -->
-<!--- Include details of your testing environment, and the tests you ran to -->
-<!--- see how your change affects other areas of the code, etc. -->
+<!--- A test that fails without the change comes first (TDD). List the -->
+<!--- commands you ran and what each showed, and the environment you ran -->
+<!--- them in. `./scripts/verify.sh` is the local merge gate. -->
 
 ## Screenshots (if appropriate):
 
 ## Types of changes
-<!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
+<!--- Put an `x` in every box that applies: -->
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to change)
@@ -26,14 +25,13 @@
 - [ ] Composite keys: if the second column is ever filtered on its own, it has its own index. A composite index only serves its leading column(s).
 - [ ] Every foreign key column is indexed.
 - [ ] The previous release still runs against the new schema (migrations apply before the new revision serves, and destructive changes wait a release).
-- [ ] No `GRANT` was needed: the runtime role's default privileges cover new tables (`scripts/db/runtime-role.sql`).
+- [ ] No `GRANT` was needed: the runtime role's default privileges cover new tables.
 
 ## Checklist:
-<!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
-<!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
+<!--- Put an `x` in every box that applies. Ask if one is unclear. -->
 - [ ] My code follows the code style of this project.
 - [ ] My change requires a change to the documentation.
 - [ ] I have updated the documentation accordingly.
 - [ ] I have read the **CONTRIBUTING** document.
 - [ ] I have added tests to cover my changes.
-- [ ] All new and existing tests passed (`make verify` is green).
+- [ ] All new and existing tests passed (`./scripts/verify.sh` is green).

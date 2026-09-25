@@ -1,0 +1,22 @@
+# The checks branch protection requires on the default branch.
+#
+# scripts/setup.sh sends every `check` line to GitHub as a required status
+# check. scripts/check-required-contexts.sh (part of `make verify`) fails
+# when these lines and the pull-request jobs of the `workflow` files
+# disagree, in either direction. Add a job to one of these workflows and
+# its name goes here in the same pull request.
+#
+# workflow <path>   a workflow whose pull-request jobs gate merges
+# check <name>      a job name, as the job reports it
+workflow .github/workflows/ci.yml
+workflow .github/workflows/codeql.yml
+workflow .github/workflows/security-scan.yml
+check verify
+check attribution (no AI credit in commits)
+check lint (actionlint + shellcheck)
+check dependency review
+check analyze (csharp)
+check analyze (javascript-typescript)
+check analyze (actions)
+check container scan (trivy)
+check dast (ZAP baseline)
