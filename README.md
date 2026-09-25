@@ -31,7 +31,7 @@ every change, and CI runs the same script.
   target. Seeded, bounded, and a failing run prints the seed and the
   shrunk input.
 
-* **One verification suite.** `make verify` runs fourteen checks with a
+* **One verification suite.** `make verify` runs every check with a
   pass/fail tally. CI runs the same script. Each checker plants the defect it
   exists to catch on every run, so a checker that can no longer fail is
   caught. The list is at the top of [scripts/verify.sh](scripts/verify.sh).

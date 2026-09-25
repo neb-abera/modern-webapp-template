@@ -219,3 +219,10 @@ jobs:
       # block policy above stays as it is.
       - name: check-dotnet-major.sh self-test (the upgrade tool proves it does the job)
         run: ./scripts/check-dotnet-major.sh --self-test
+
+      # setup.sh runs once per generated repository, where nobody watches it.
+      # Its self-test renames a copy of the tree, fails on any file still
+      # naming the template, and checks the settings it would send against a
+      # stubbed gh. No network.
+      - name: setup.sh self-test (the rename and the repository settings)
+        run: ./scripts/setup.sh --self-test
