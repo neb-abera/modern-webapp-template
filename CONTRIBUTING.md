@@ -10,6 +10,8 @@ The host needs only Docker and git. The toolchain lives in containers.
 ```bash
 make dev      # run the app locally (hot reload)
 make verify   # run the full verification suite, exactly as CI does
+make lint     # actionlint and shellcheck, as the CI lint job runs them
+make generate # rename a copy the way setup.sh does, then build and test it
 make contract # after changing an API shape: regenerate openapi.json and the client types
 ```
 
@@ -17,8 +19,8 @@ make contract # after changing an API shape: regenerate openapi.json and the cli
 template-parity drift guards, server build and unit tests, client
 typecheck/lint/tests, the API contract, held-majors and response-DTO checks,
 the database runtime-role check, a production image build and its byte
-budget, a smoke test of the running container, the Playwright end-to-end
-suite, and a mutation canary. Every checker with a `--self-test` runs it
+budget, a smoke test of the running container, a k6 run of the load
+harness, the Playwright end-to-end suite, and a mutation canary. Every checker with a `--self-test` runs it
 first, so a checker that can no longer fail is a red check.
 If it is green on your machine, CI will agree. Both run the same
 containers.
