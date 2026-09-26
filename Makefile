@@ -102,7 +102,7 @@ prose: ## lint the Markdown and the built pages against the writing rules (.vale
 # the code actually builds and tests with.
 SDK_IMAGE = $(shell sed -n 's|^FROM \(mcr\.microsoft\.com/dotnet/sdk:[^ ]*\) AS server-build$$|\1|p' Dockerfile)
 NODE_IMAGE = $(shell sed -n 's/^FROM \(node:[^@ ]*\).*/\1/p' Dockerfile | head -1)
-PLAYWRIGHT_IMAGE = mcr.microsoft.com/playwright:v$(shell sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)-noble
+PLAYWRIGHT_IMAGE = mcr.microsoft.com/playwright:v$(shell sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)-resolute
 
 test-server: ## run the server unit tests
 	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-nuget:/root/.nuget $(SDK_IMAGE) \

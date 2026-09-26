@@ -30,7 +30,7 @@ permissions:
 jobs:
   image-scan:
     name: container scan (trivy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
 
   dast:
     name: dast (ZAP baseline)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
 
     steps:
