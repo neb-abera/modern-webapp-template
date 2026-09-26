@@ -18,11 +18,13 @@
 #      odd major through the one due two years from now, and no even major.
 # Node: a major is LTS once a release of it in NODE_INDEX_URL carries an lts
 # codename. From 27 on each major ships in April and turns LTS in October.
-#   3. The docker entry that updates each node image ignores every major
+#   3. Every node image is on an LTS major. Node 26 was in use in September
+#      2026, a month before it turned LTS.
+#   4. The docker entry that updates each node image ignores every major
 #      above the one in use, through the one due two years from now, that is
 #      not LTS yet. It ignores no LTS major. The range comes out when its
 #      major turns LTS, and this check fails until it does.
-#   4. Every npm entry for a package.json with @types/node ignores the same
+#   5. Every npm entry for a package.json with @types/node ignores the same
 #      majors of @types/node, so the types never run ahead of the runtime.
 #
 #   scripts/check-lts-majors.sh              check the repository
@@ -233,6 +235,10 @@ check_node() {
 
   while read -r f major; do
     [ "$major" -gt "$cur" ] && cur="$major"
+    if ! grep -qx "$major" <<< "$lts"; then
+      echo "error: $f: node:$major is not an LTS major yet; use the newest LTS major, $(sort -n <<< "$lts" | tail -1), and ignore $major until it turns LTS" >&2
+      STATUS=1
+    fi
   done <<< "$images"
   due=$((yy + 2))
   free="$cur"
@@ -285,7 +291,7 @@ self_test() {
   trap "rm -rf '$DIR'" EXIT
   files="$(git ls-files -- .github/dependabot.yml Dockerfile '*/Dockerfile' '*.Dockerfile' 'Dockerfile.*' \
     '*.props' '*.csproj' package.json '*/package.json')"
-  for case in clean promoted missing types outage lapsed dotnet-sts dotnet-swallow dotnet-nuget; do
+  for case in clean promoted missing types outage lapsed nonlts dotnet-sts dotnet-swallow dotnet-nuget; do
     for f in $files; do
       mkdir -p "$DIR/$case/$(dirname "$f")"
       cp "$f" "$DIR/$case/$f"
@@ -307,11 +313,13 @@ self_test() {
     return 1
   fi
   first="$(head -1 <<< "$ignored")"
-  index() { # index <major that is LTS despite its range>
+  index() { # index <major that is LTS despite its range> [major that is not LTS]
     local m sep=""
     printf '['
     for ((m = 18; m <= yy + 4; m++)); do
-      if [ "$m" = "$1" ] || ! grep -qx "$m" <<< "$ignored"; then
+      if [ "$m" = "${2:-}" ]; then
+        printf '%s{"version":"v%s.0.0","lts":false}' "$sep" "$m"
+      elif [ "$m" = "$1" ] || ! grep -qx "$m" <<< "$ignored"; then
         printf '%s{"version":"v%s.0.0","lts":"Name%s"}' "$sep" "$m" "$m"
       else
         printf '%s{"version":"v%s.0.0","lts":false}' "$sep" "$m"
@@ -322,6 +330,7 @@ self_test() {
   }
   index none > "$DIR/index.json"
   index "$first" > "$DIR/promoted-index.json"
+  index none "$cur" > "$DIR/nonlts-index.json"
 
   # Planted defects, one per case.
   awk -v r=">= $first, < $((first + 1))" '!index($0, r)' .github/dependabot.yml > "$DIR/missing/.github/dependabot.yml"
@@ -343,6 +352,8 @@ self_test() {
   expect 2 "an outage, not a pass" "an unreadable Node index is an outage" outage \
     LTS_YEAR="$yy" NODE_INDEX_URL="file://$DIR/no-such-index.json"
   expect 1 "is not LTS and not ignored" "ranges that lapse within two years fail" lapsed LTS_YEAR=40
+  expect 1 "node:$cur is not an LTS major yet" "a node image on a major that is not LTS yet fails" \
+    nonlts LTS_YEAR="$yy" NODE_INDEX_URL="file://$DIR/nonlts-index.json"
 
   dn="$(for f in $files; do sed -nE "s#${DOTNET_FROM}#\\3#p" "$f"; done | sort -n | tail -1)"
   if [ -n "$dn" ]; then

@@ -55,6 +55,11 @@ updates:
           - ">= 15, < 16"
       - dependency-name: node
         versions:
+          # 25 never turns LTS. 26 turns LTS on 2026-10-28, and
+          # scripts/check-lts-majors.sh fails from then until this range
+          # comes out.
+          - ">= 25, < 26"
+          - ">= 26, < 27"
           - ">= 27, < 28"
           - ">= 28, < 29"
           - ">= 29, < 30"
@@ -107,6 +112,11 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         versions:
+          # 25 never turns LTS. 26 turns LTS on 2026-10-28, and
+          # scripts/check-lts-majors.sh fails from then until this range
+          # comes out.
+          - ">= 25, < 26"
+          - ">= 26, < 27"
           - ">= 27, < 28"
           - ">= 28, < 29"
           - ">= 29, < 30"

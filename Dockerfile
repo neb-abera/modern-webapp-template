@@ -4,9 +4,10 @@
 # Single source of truth for the Node toolchain. Every stage that needs Node
 # derives from this image, so one Dependabot bump moves them all together.
 # bookworm-slim (glibc 2.36) stays binary-compatible with the Ubuntu-based
-# .NET SDK image the dev stage copies Node into.
+# .NET SDK image the dev stage copies Node into. An LTS major only:
+# scripts/check-lts-majors.sh fails on any other.
 #
-FROM node:26-bookworm-slim@sha256:c8fedd782bcd1b68d8a7d1ed2577b5f820eba820871323f605292651ff11e3c6 AS node-base
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS node-base
 
 #
 # Client build
