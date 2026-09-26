@@ -3,11 +3,20 @@
 # check-dotnet-major.sh — detect a newer LTS .NET major and rewrite every
 # version site that must move in lockstep with it:
 #
-#   1. <TargetFramework> in server/Directory.Build.props
-#   2. the dotnet/sdk and dotnet/aspnet base images in the Dockerfile
-#      (tag and digest together, preserving the supply-chain pinning)
-#   3. Microsoft.AspNetCore.* package versions in
-#      server/Directory.Packages.props
+#   1. <TargetFramework> in every .csproj and .props file that declares one
+#   2. the dotnet/sdk and dotnet/aspnet base images in every Dockerfile that
+#      uses them (tag and digest together, preserving the supply-chain
+#      pinning)
+#   3. every PackageVersion in a Directory.Packages.props whose version
+#      carries the framework's major: Microsoft.AspNetCore.*,
+#      Microsoft.Extensions.*, Microsoft.EntityFrameworkCore.*, the Npgsql
+#      providers, whatever the project uses
+#
+# The sites are found by what they contain, not by a path or a package list,
+# so one byte-identical file serves the template and every repository
+# ported from it. A hand list of package prefixes once missed
+# Microsoft.Extensions.ApiDescription.Server, which versions with the
+# framework and would have stayed a major behind.
 #
 # Dependabot keeps everything current within a major but never crosses one,
 # because the TargetFramework gates it; this script makes the cross-major
@@ -28,17 +37,19 @@
 # of support. .github/dependabot.yml holds the STS majors back in the same
 # way, checked by scripts/check-lts-majors.sh.
 #
-# --self-test is the upgrade, rehearsed. The three files above are copied
-# into a temp tree with this script beside them; curl and docker are
-# replaced on PATH by stubs that answer from fixtures (a releases index with
-# an LTS major two ahead and a newer STS major, a registry that knows
-# the new tags, a NuGet feed with a preview and a stable release of the new
-# major); the copy is run and every lockstep site must have moved to the LTS
-# major, exactly. Run again with an index whose only newer major is STS it
-# must change nothing, with a registry whose runtime-image
-# suffix changed it must find the new tag, and with an index it cannot read
-# it must fail saying so. Runs unattended once a month, so this is the only
-# time anyone watches it work: CI runs it on every pull request.
+# --self-test is the upgrade, rehearsed. Every site above is copied into a
+# temp tree with this script beside it, and two packages are planted in each
+# Directory.Packages.props: one versioned with the framework and one not.
+# curl and docker are replaced on PATH by stubs that answer from fixtures (a
+# releases index with an LTS major two ahead and a newer STS major, a
+# registry that knows the new tags, a NuGet feed with a preview and a stable
+# release of the new major). The copy is run and every lockstep site must
+# have moved to the LTS major, exactly, with the other package untouched.
+# Run again with an index whose only newer major is STS it must change
+# nothing, with a registry whose runtime-image suffix changed it must find
+# the new tag, and with an index it cannot read it must fail saying so. Runs
+# unattended once a month, so this is the only time anyone watches it work:
+# CI runs it on every pull request.
 
 set -euo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -49,16 +60,62 @@ SUMMARY_FILE="${SUMMARY_FILE:-/dev/null}"
 
 note() { echo "$*"; }
 
+# source_files <find name tests>: files under the current directory, with
+# git metadata, dependencies and build output left out. Paths carry no
+# leading ./ and are sorted.
+source_files() {
+  find . \( -name .git -o -name node_modules -o -name bin -o -name obj \) -prune \
+    -o -type f \( "$@" \) -print | sed 's|^\./||' | sort
+}
+# framework_files: every .csproj and .props that declares a TargetFramework.
+framework_files() {
+  local f
+  for f in $(source_files -name '*.csproj' -o -name '*.props'); do
+    if grep -q '<TargetFramework>net' "$f"; then echo "$f"; fi
+  done
+}
+# image_files: every Dockerfile that builds on a .NET sdk or aspnet image.
+image_files() {
+  local f
+  for f in $(source_files -name Dockerfile -o -name '*.Dockerfile'); do
+    if grep -Eq '^FROM mcr\.microsoft\.com/dotnet/(sdk|aspnet):' "$f"; then echo "$f"; fi
+  done
+}
+# package_files: every central package-version file.
+package_files() { source_files -name Directory.Packages.props; }
+# current_framework: the one TargetFramework version the projects share.
+current_framework() {
+  local files versions
+  files="$(framework_files)"
+  [ -n "$files" ] || { echo "error: no .csproj or .props file declares a TargetFramework" >&2; return 1; }
+  # shellcheck disable=SC2086 # one path per word
+  versions="$(sed -n 's/.*<TargetFramework>net\([0-9][0-9.]*\)<.*/\1/p' $files | sort -u)"
+  if [ "$(printf '%s\n' "$versions" | grep -c .)" -ne 1 ]; then
+    echo "error: the projects do not agree on one TargetFramework: $(printf '%s' "$versions" | tr '\n' ' ')" >&2
+    return 1
+  fi
+  printf '%s\n' "$versions"
+}
+# aspnet_suffix: the OS suffix of the aspnet image tag (10.0-noble-chiseled
+# gives noble-chiseled), from the first Dockerfile that names one.
+aspnet_suffix() {
+  local f
+  for f in $(image_files); do
+    sed -n 's|^FROM mcr\.microsoft\.com/dotnet/aspnet:[0-9.]*-\([a-z-]*\)@.*|\1|p' "$f"
+  done | head -1
+}
+
 self_test() {
-  local dir current major next sts suffix sdk_digest aspnet_digest failed=0
+  local dir current major next sts suffix sdk_digest aspnet_digest failed=0 sites f
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064 # expand now: the directory name is fixed
   trap "rm -rf '$dir'" EXIT
 
-  current="$(sed -n 's/.*<TargetFramework>net\([0-9][0-9.]*\)<.*/\1/p' server/Directory.Build.props)"
-  suffix="$(sed -n 's|^FROM mcr\.microsoft\.com/dotnet/aspnet:[0-9.]*-\([a-z-]*\)@.*|\1|p' Dockerfile | head -1)"
-  if [ -z "$current" ] || [ -z "$suffix" ]; then
-    echo "self-test FAILED: could not read the TargetFramework or the aspnet image suffix" >&2
+  current="$(current_framework)" || { echo "self-test FAILED: could not read the TargetFramework" >&2; return 1; }
+  suffix="$(aspnet_suffix)"
+  sites="$(framework_files; image_files; package_files)"
+  if [ -z "$suffix" ] || [ -z "$(package_files)" ]; then
+    echo "self-test FAILED: found no aspnet image with an OS suffix, or no Directory.Packages.props" >&2
     return 1
   fi
   major="${current%%.*}"
@@ -67,17 +124,19 @@ self_test() {
   sdk_digest="sha256:$(printf '%064d' 0 | tr 0 a)"
   aspnet_digest="sha256:$(printf '%064d' 0 | tr 0 b)"
 
-  # One tree per scenario: the real files, this script, nothing else.
-  plant() {
-    mkdir -p "$dir/$1/server" "$dir/$1/scripts"
-    cp server/Directory.Build.props server/Directory.Packages.props "$dir/$1/server/"
-    cp Dockerfile "$dir/$1/"
-    cp "$SELF" "$dir/$1/scripts/check-dotnet-major.sh"
-  }
-  plant upgrade
-  plant resuffixed
-  plant current
-  plant unreadable
+  # The planted tree: every real site, two planted packages in each package
+  # file, and this script. Each scenario runs on its own copy of it.
+  mkdir -p "$dir/planted/scripts"
+  for f in $sites; do
+    mkdir -p "$dir/planted/$(dirname "$f")"
+    cp "$f" "$dir/planted/$f"
+  done
+  for f in $(package_files); do
+    perl -0pi -e "s|(\\n\\s*</ItemGroup>)|\\n    <PackageVersion Include=\"Planted.Tracks.Framework\" Version=\"$major.0.4\" />\\n    <PackageVersion Include=\"Planted.Own.Versioning\" Version=\"3.2.1\" />\$1|" "$dir/planted/$f"
+  done
+  cp "$SELF" "$dir/planted/scripts/check-dotnet-major.sh"
+  local tree
+  for tree in upgrade resuffixed current unreadable; do cp -R "$dir/planted" "$dir/$tree"; done
 
   # Fixtures the stubs answer from.
   mkdir -p "$dir/fixture" "$dir/bin"
@@ -126,26 +185,38 @@ STUB
   check() { if "${@:2}"; then ok "$1"; else flunk "$1"; fi; }
   # shellcheck disable=SC2329  # invoked through check()
   moved_everything() { # moved_everything <tree> <aspnet tag>: every lockstep site is on the new major
-    local tree="$dir/$1" tag="$2" packages
-    grep -q "<TargetFramework>net$next<" "$tree/server/Directory.Build.props" || return 1
-    grep -q "^FROM mcr.microsoft.com/dotnet/sdk:$next@$sdk_digest AS server-build$" "$tree/Dockerfile" || return 1
-    grep -q "^FROM mcr.microsoft.com/dotnet/aspnet:$tag@$aspnet_digest AS runtime$" "$tree/Dockerfile" || return 1
-    ! grep -Eq "dotnet/(sdk|aspnet):${current}[-@]" "$tree/Dockerfile" || return 1
-    packages="$(grep -c 'PackageVersion Include="Microsoft\.AspNetCore\.' "$tree/server/Directory.Packages.props")"
-    [ "$(grep -c "Include=\"Microsoft\.AspNetCore\.[^\"]*\" Version=\"$next.3\"" "$tree/server/Directory.Packages.props")" = "$packages" ] || return 1
+    local tree="$dir/$1" tag="$2" f
+    for f in $(cd "$dir/planted" && framework_files); do
+      grep -q "<TargetFramework>net$next<" "$tree/$f" || return 1
+      ! grep -q "<TargetFramework>net$current<" "$tree/$f" || return 1
+    done
+    for f in $(cd "$dir/planted" && image_files); do
+      ! grep -Eq "dotnet/(sdk|aspnet):${current}[-@]" "$tree/$f" || return 1
+      ! grep -E '^FROM mcr\.microsoft\.com/dotnet/sdk:' "$tree/$f" | grep -vq "^FROM mcr.microsoft.com/dotnet/sdk:$next@$sdk_digest " || return 1
+      ! grep -E '^FROM mcr\.microsoft\.com/dotnet/aspnet:' "$tree/$f" | grep -vq "^FROM mcr.microsoft.com/dotnet/aspnet:$tag@$aspnet_digest " || return 1
+    done
+    grep -rq "^FROM mcr.microsoft.com/dotnet/sdk:$next@$sdk_digest " "$tree" || return 1
+    grep -rq "^FROM mcr.microsoft.com/dotnet/aspnet:$tag@$aspnet_digest " "$tree" || return 1
+    for f in $(cd "$dir/planted" && package_files); do
+      # Every package on the old major is on the new one, the planted one
+      # included, and every other line is untouched.
+      grep -q "Include=\"Planted.Tracks.Framework\" Version=\"$next.3\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Own.Versioning\" Version=\"3.2.1\"" "$tree/$f" || return 1
+      [ "$(grep -c "PackageVersion Include=\"[^\"]*\" Version=\"$major\\." "$dir/planted/$f")" \
+        = "$(grep -c "PackageVersion Include=\"[^\"]*\" Version=\"$next.3\"" "$tree/$f")" ] || return 1
+      [ "$(grep -v "Version=\"$major\\." "$dir/planted/$f")" = "$(grep -v "Version=\"$next.3\"" "$tree/$f")" ] || return 1
+    done
     grep -q "^new-version=$next$" "$tree.output" || return 1
     grep -q "net$current\*\* to \*\*net$next" "$tree.summary.md"
   }
   # shellcheck disable=SC2329  # invoked through check()
-  unchanged() { # unchanged <tree>: the three files are byte-identical to the real ones
-    cmp -s server/Directory.Build.props "$dir/$1/server/Directory.Build.props" \
-      && cmp -s server/Directory.Packages.props "$dir/$1/server/Directory.Packages.props" \
-      && cmp -s Dockerfile "$dir/$1/Dockerfile"
+  unchanged() { # unchanged <tree>: every site is byte-identical to the planted tree
+    diff -r "$dir/planted" "$dir/$1" > /dev/null
   }
 
   run upgrade index-next.json "$next-$suffix"
   check "the LTS major ahead of net$current is taken past an STS one (exit $code)" [ "$code" -eq 0 ]
-  check "every lockstep site moved to net$next: TargetFramework, both image tags with their digests, the AspNetCore packages (stable only), the output and the summary" \
+  check "every lockstep site moved to net$next: each TargetFramework, every image tag with its digest, every package on the framework's major (stable only, Microsoft.Extensions included), the output and the summary, and a package with its own versioning untouched" \
     moved_everything upgrade "$next-$suffix"
 
   run resuffixed index-next.json "$next-plucky-chiseled"
@@ -157,12 +228,12 @@ STUB
   run current index-current.json "$next-$suffix"
   check "an index whose only newer major is STS changes nothing (exit $code)" [ "$code" -eq 0 ]
   check "it says so" grep -q "net$current is the latest LTS major" <<< "$out"
-  check "and the three files are untouched" unchanged current
+  check "and every site is untouched" unchanged current
 
   run unreadable index-empty.json "$next-$suffix"
   check "an index with no LTS release fails rather than upgrading to nothing (exit $code)" [ "$code" -ne 0 ]
   check "it says why" grep -q "could not determine the latest LTS .NET version" <<< "$out"
-  check "and the three files are untouched" unchanged unreadable
+  check "and every site is untouched" unchanged unreadable
 
   if [ "$failed" -eq 0 ]; then
     echo "self-test: a planted stale major was upgraded to the next LTS at every lockstep site past an STS major, a changed image suffix was found, an STS major was left alone, an index with no LTS failed"
@@ -180,8 +251,7 @@ replace() { # replace <file> <perl-substitution>
   perl -pi -e "$2" "$1"
 }
 
-current="$(sed -n 's/.*<TargetFramework>net\([0-9][0-9.]*\)<.*/\1/p' server/Directory.Build.props)"
-[ -n "$current" ] || { echo "error: could not read TargetFramework from server/Directory.Build.props" >&2; exit 1; }
+current="$(current_framework)"
 
 latest="$(curl -fsSL "$RELEASES_INDEX_URL" | jq -r '
   ."releases-index"
@@ -201,17 +271,19 @@ fi
 
 note "LTS .NET ${latest} is out; currently on net${current}. Rewriting the lockstep sites."
 
+projects="$(framework_files)"
+images="$(image_files)"
+packages="$(package_files)"
+
 digest_of() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}'; }
 
 # The sdk tag is just the channel version; the aspnet tag carries an OS
 # suffix (e.g. 10.0-noble-chiseled) that can change between majors, so
 # discover the new major's chiseled tag from the registry rather than
 # assuming the suffix survives.
-sdk_ref="mcr.microsoft.com/dotnet/sdk:${latest}"
-sdk_digest="$(digest_of "$sdk_ref")"
+sdk_digest="$(digest_of "mcr.microsoft.com/dotnet/sdk:${latest}")"
 
-aspnet_suffix="$(sed -n 's|^FROM mcr\.microsoft\.com/dotnet/aspnet:[0-9.]*-\([a-z-]*\)@.*|\1|p' Dockerfile | head -1)"
-aspnet_tag="${latest}-${aspnet_suffix}"
+aspnet_tag="${latest}-$(aspnet_suffix)"
 if ! docker buildx imagetools inspect "mcr.microsoft.com/dotnet/aspnet:${aspnet_tag}" >/dev/null 2>&1; then
   aspnet_tag="$(curl -fsSL https://mcr.microsoft.com/v2/dotnet/aspnet/tags/list \
     | jq -r '.tags[]' | grep -E "^${latest}-[a-z]+-chiseled$" | sort | head -1)"
@@ -220,44 +292,78 @@ if ! docker buildx imagetools inspect "mcr.microsoft.com/dotnet/aspnet:${aspnet_
 fi
 aspnet_digest="$(digest_of "mcr.microsoft.com/dotnet/aspnet:${aspnet_tag}")"
 
-replace server/Directory.Build.props "s|<TargetFramework>net\Q${current}\E<|<TargetFramework>net${latest}<|"
-replace Dockerfile "s|dotnet/sdk:\Q${current}\E\@sha256:[0-9a-f]+|dotnet/sdk:${latest}\@${sdk_digest}|g"
-replace Dockerfile "s|dotnet/aspnet:\Q${current}\E-[a-z-]+\@sha256:[0-9a-f]+|dotnet/aspnet:${aspnet_tag}\@${aspnet_digest}|g"
+for f in $projects; do
+  replace "$f" "s|<TargetFramework>net\Q${current}\E<|<TargetFramework>net${latest}<|"
+done
+for f in $images; do
+  replace "$f" "s|dotnet/sdk:\Q${current}\E\@sha256:[0-9a-f]+|dotnet/sdk:${latest}\@${sdk_digest}|g"
+  replace "$f" "s|dotnet/aspnet:\Q${current}\E-[a-z-]+\@sha256:[0-9a-f]+|dotnet/aspnet:${aspnet_tag}\@${aspnet_digest}|g"
+  if grep -Eq "dotnet/(sdk|aspnet):${current//./\\.}([-@ ]|$)" "$f"; then
+    echo "error: $f still names a .NET ${current} image that is not in tag@digest form; move it by hand" >&2
+    exit 1
+  fi
+done
 
-# Framework-tracking packages: bump every Microsoft.AspNetCore.* entry to
-# the latest stable release of the new major. Anything without one yet is
-# left alone and called out in the summary.
+# Framework-tracking packages: every PackageVersion on the framework's major
+# moves to the latest stable release of the new major. Anything without one
+# yet is left alone and called out in the summary.
 pending=""
 bumped=""
+# shellcheck disable=SC2086 # one path per word
 while read -r pkg; do
+  [ -n "$pkg" ] || continue
   lower="$(echo "$pkg" | tr '[:upper:]' '[:lower:]')"
   new_ver="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/${lower}/index.json" \
     | jq -r --arg m "${new_major}." '.versions | map(select(startswith($m) and (contains("-") | not))) | last // empty')"
   if [ -n "$new_ver" ]; then
-    replace server/Directory.Packages.props "s|(Include=\"\Q${pkg}\E\" Version=\")[^\"]+|\${1}${new_ver}|"
+    for f in $packages; do
+      replace "$f" "s|(Include=\"\Q${pkg}\E\" Version=\")\Q${cur_major}\E\.[^\"]+|\${1}${new_ver}|"
+    done
     bumped="${bumped}- \`${pkg}\` → ${new_ver}\n"
   else
     pending="${pending}- \`${pkg}\` has no stable ${new_major}.x release yet\n"
   fi
-done < <(sed -n 's/.*PackageVersion Include="\(Microsoft\.AspNetCore\.[^"]*\)".*/\1/p' server/Directory.Packages.props)
+done < <(sed -n "s/.*PackageVersion Include=\"\([^\"]*\)\" Version=\"${cur_major}\..*/\1/p" $packages | sort -u)
+
+locks="$(source_files -name packages.lock.json)"
+
+bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
 
 {
   echo "Moves the repo from **net${current}** to **net${latest}**, the latest LTS .NET major."
   echo
-  echo "Every lockstep site moves together:"
+  echo "Every lockstep site moves together."
   echo
-  echo "- \`<TargetFramework>\` in \`server/Directory.Build.props\`"
-  echo "- \`dotnet/sdk:${latest}\` and \`dotnet/aspnet:${aspnet_tag}\` in the \`Dockerfile\`, digest-pinned"
+  echo "TargetFramework:"
+  echo
+  # shellcheck disable=SC2086 # one path per word
+  bullets $projects
+  echo
+  echo "\`dotnet/sdk:${latest}\` and \`dotnet/aspnet:${aspnet_tag}\`, digest-pinned:"
+  echo
+  # shellcheck disable=SC2086
+  bullets $images
+  echo
+  echo "Packages versioned with the framework:"
+  echo
   printf '%b' "$bumped"
+  if [ -n "$locks" ]; then
+    echo
+    echo "Regenerate the lock files on this branch before it can build. Run \`dotnet restore --force-evaluate\` in the new SDK image for each project below, then commit every lock file that moved:"
+    echo
+    # shellcheck disable=SC2046 # one path per word
+    bullets $(for f in $locks; do dirname "$f"; done)
+  fi
   if [ -n "$pending" ]; then
     echo
-    echo "Left for a human (re-run the workflow once these ship):"
+    echo "Left for a human. Re-run the workflow once these ship. A package whose version shares the framework's major by coincidence can stay where it is:"
+    echo
     printf '%b' "$pending"
   fi
   echo
   echo "Review the [breaking changes for .NET ${new_major}](https://learn.microsoft.com/dotnet/core/compatibility/${latest}) before merging."
   echo
-  echo "Opened by \`dotnet-major-upgrade.yml\`. CI does not run automatically on PRs opened with the workflow token — close and reopen this PR (or push an empty commit) to run the verify suite."
+  echo "Opened by \`dotnet-major-upgrade.yml\`. CI does not run on a pull request opened with the workflow token. Close and reopen this one, or push an empty commit, to run the checks."
 } > "$SUMMARY_FILE"
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
