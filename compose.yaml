@@ -47,6 +47,9 @@ services:
     build:
       context: .
       target: dev
+    # As the user who owns the checkout: the image's own user can neither read
+    # nor write a tree left at rw-rw---- by a umask of 007 (Makefile says more).
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     command: dotnet watch --project Api --non-interactive
     working_dir: /work/server
     environment:
@@ -61,6 +64,7 @@ services:
     build:
       context: .
       target: dev
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     command: sh -c "npm install && npm run dev"
     working_dir: /work/client
     environment:
@@ -80,16 +84,25 @@ services:
     build:
       context: .
       target: contract
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    environment:
+      HOME: /tmp
+      DOTNET_CLI_HOME: /tmp
+      NUGET_PACKAGES: /tmp/nuget
     volumes:
       - .:/work
       - /work/tools/api-types/node_modules
 
   # Load-test harness (`make load`): k6 drives the production-like app.
-  # A harness rather than a CI gate - shared runners make load numbers
-  # noise; run it on quiet hardware when you want real answers.
+  # verify.sh runs the same script and image as a smoke gate (one user,
+  # correctness thresholds only). Latency is judged here alone, on quiet
+  # hardware: shared runners make load numbers noise.
   k6:
     profiles: [load]
-    image: grafana/k6:2.2.0
+    image: grafana/k6:2.2.0@sha256:9bd01d6941fca969cb61bb57d2da5ee9b385fe2aa8881df3798c196564d6ace6
+    # As the checkout's owner: the image's own user cannot read a tree left
+    # at rw-rw---- by a umask of 007, and k6 then exits 255 before a request.
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     volumes:
       - ./load:/scripts:ro
     environment:

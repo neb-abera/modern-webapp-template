@@ -36,10 +36,21 @@ check() (
   template="$(sed -n 's/^template: *//p' "$LIST" | head -1)"
   [ -n "$template" ] || { echo "error: $LIST names no template (a 'template: owner/repo' line)" >&2; exit 1; }
 
-  # This repository's name, from CI or from the origin remote.
+  # This repository's name, from CI or from the origin remote. Each failure
+  # exits with a message. A bare git failure under set -e exited 128 and said
+  # nothing. Inside a caller's `||` set -e is off, and the check passed.
   self="${GITHUB_REPOSITORY:-}"
   if [ -z "$self" ]; then
-    self="$(git config --get remote.origin.url 2>/dev/null | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
+    if ! gitout="$(git rev-parse --git-dir 2>&1)"; then
+      echo "error: git cannot read this repository, so its name is unknown: $gitout" >&2
+      echo "error: inside a container a worktree's .git file names a host path. Pass GITHUB_REPOSITORY=owner/repo from the host." >&2
+      exit 1
+    fi
+    if ! url="$(git config --get remote.origin.url)"; then
+      echo "error: this repository has no origin remote, so its name is unknown. Set GITHUB_REPOSITORY=owner/repo." >&2
+      exit 1
+    fi
+    self="$(printf '%s\n' "$url" | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
   fi
   if [ "$self" = "$template" ]; then
     echo "template parity: this is $template; nothing to compare"
@@ -130,7 +141,21 @@ self_test() {
   cp -R "$dir/repo" "$dir/missing"
   rm "$dir/missing/scripts/shared.sh"
 
+  # Plant 3: git cannot read the repository. A worktree's .git is a file
+  # naming a host path, and inside a container that path does not exist.
+  cp -R "$dir/repo" "$dir/unreadable"
+  printf 'gitdir: %s/no-such-worktree\n' "$dir" > "$dir/unreadable/.git"
+
+  # Plant 4: git reads the repository, and it has no origin remote.
+  cp -R "$dir/repo" "$dir/no-origin"
+  git -C "$dir/no-origin" init -q
+
   export TEMPLATE_PARITY_SOURCE="file://$dir/template"
+  unset GITHUB_REPOSITORY
+  expect 1 "git cannot read this repository" "git failing to read the repository fails, naming the cause" "$dir/unreadable"
+  expect 1 "has no origin remote" "a repository with no origin remote fails, naming the cause" "$dir/no-origin"
+  GITHUB_REPOSITORY="example/repo" \
+    expect 0 "NOTICE: identical to example/template" "GITHUB_REPOSITORY stands in for git" "$dir/unreadable"
   export GITHUB_REPOSITORY="example/repo"
   expect 0 "NOTICE: identical to example/template" "identical files pass" "$dir/repo"
   expect 1 "NOTICE differs from example/template" "a file edited here and not in the template fails, by name" "$dir/drifted"
@@ -140,7 +165,7 @@ self_test() {
   unset TEMPLATE_PARITY_SOURCE GITHUB_REPOSITORY
 
   if [ "$SELF_TEST_FAILED" -eq 0 ]; then
-    echo "self-test: a drifted file and a missing file were both caught by name; identical files and the template itself pass"
+    echo "self-test: a drifted file, a missing file, an unreadable repository and a missing origin were all caught by name; identical files and the template itself pass"
   fi
   return "$SELF_TEST_FAILED"
 }

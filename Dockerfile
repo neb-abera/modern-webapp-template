@@ -26,7 +26,7 @@ RUN npm run build
 # tags but never the TargetFramework — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) makes the cross-major jump.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS server-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 AS server-build
 WORKDIR /build/server
 COPY server/ ./
 # ReadyToRun precompiles IL for faster cold starts (Container Apps scale
@@ -39,7 +39,7 @@ RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true -
 # node-base above rather than a package repository, so the dev toolchain can
 # never drift from the version the client is built with.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS dev
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 AS dev
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
@@ -71,14 +71,46 @@ CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true &
 # script reads it from here rather than pinning a version of its own.
 FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c8857bc86b724a28e AS vale
 
+# Workflow and script linter, for `make lint` and the CI lint job. Never
+# built into anything, like the vale stage: the image carries actionlint and
+# the shellcheck it runs on embedded run: blocks, and one FROM line here is
+# what Dependabot bumps.
+FROM rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 AS actionlint
+
+# The same rules, on the pages a reader is given rather than on the Markdown
+# beside them. A leaf: nothing ships from here.
+#
+# The fixtures first, every time: the failing one must fail and the clean one
+# must pass, so a rule or a config path that has stopped working is caught
+# here rather than trusted. Then every prerendered page. spa.html is the
+# empty shell the server falls back to and carries no copy.
+#
+#   docker build --target pageprose .
+#   make prose
+FROM vale AS pageprose
+COPY --from=client-build /build/client/dist /dist
+COPY [".vale.ini", "/prose/.vale.ini"]
+COPY [".vale/", "/prose/.vale/"]
+RUN ! vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/fails.md > /dev/null \
+    && vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/passes.md \
+    && find /dist -name '*.html' ! -name spa.html -print0 \
+    | xargs -0 vale --config=/prose/.vale.ini --output=line
+
 #
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02 AS runtime
 WORKDIR /app
-COPY --from=server-build /out ./
-COPY --from=client-build /build/client/dist ./wwwroot
+# Owned by the user the app runs as. Without the --chown the mode travels
+# from the build context: a developer whose umask is 007 checks
+# appsettings.json out as rw-rw----, dotnet publish carries that through, and
+# the image starts as APP_UID against a file it cannot read. The container
+# exits and the e2e suite reports the app as down. A CI runner checks out
+# world-readable and never sees it. Ownership rather than a chmod: the image
+# should not care what umask built it.
+COPY --from=server-build --chown=$APP_UID:$APP_UID /out ./
+COPY --from=client-build --chown=$APP_UID:$APP_UID /build/client/dist ./wwwroot
 # The chiseled base already defaults to its non-root user (uid 1654, exported
 # as APP_UID), but only implicitly. Declare it, so the claim survives a base
 # image change — and verify.sh's smoke check asserts the built image's

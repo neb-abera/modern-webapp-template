@@ -31,7 +31,7 @@ every change, and CI runs the same script.
   target. Seeded, bounded, and a failing run prints the seed and the
   shrunk input.
 
-* **One verification suite.** `make verify` runs fourteen checks with a
+* **One verification suite.** `make verify` runs every check with a
   pass/fail tally. CI runs the same script. Each checker plants the defect it
   exists to catch on every run, so a checker that can no longer fail is
   caught. The list is at the top of [scripts/verify.sh](scripts/verify.sh).
@@ -84,8 +84,10 @@ every change, and CI runs the same script.
   compose profile pinned by digest, and the serving role is proven on every
   run unable to `CREATE`, `ALTER` or `DROP`.
 
-* **Prose is linted.** `make prose` runs Vale with the rules in
-  `.vale/styles/Abera` over every Markdown file. Check 3 of the suite.
+* **Prose is linted, on the pages too.** `make prose` runs Vale with the
+  rules in `.vale/styles/Abera` over every Markdown file, then over the
+  prerendered HTML the image ships, as a reader is given it. Check 3 of the
+  suite.
 
 * **Toolchain.** .NET 10 LTS, React 19, Vite 8, Vitest 4, TypeScript 7,
   Biome 2, Playwright, Node 26.

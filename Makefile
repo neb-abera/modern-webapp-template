@@ -1,4 +1,4 @@
-.PHONY: run dev ports shell contract verify prose test-server test-client e2e clean help load
+.PHONY: run dev ports shell contract verify prose lint generate test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -11,6 +11,17 @@ for line in sys.stdin:
 		print("%-20s %s" % (target, help))
 endef
 export PRINT_HELP_PYSCRIPT
+
+# Who the containers that mount this directory run as. The dev image's own
+# `app` user is neither the owner of this tree nor in its group, so on a
+# machine whose umask is 007 it cannot read the checkout at all: `make
+# contract` reported "Project file does not exist" for a file sitting right
+# there. Anything it writes would be owned by that user too, which the owner
+# of the checkout then cannot delete.
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
+export HOST_UID
+export HOST_GID
 
 # Docker image/container names derive from the checkout directory, so
 # projects generated from this template need no edits here.
@@ -51,7 +62,14 @@ shell: ## open a development shell inside the toolchain image
 	docker rm -f $(IMAGE)-dev 2>/dev/null || true
 	docker run --rm -it --name $(IMAGE)-dev -v $(CURDIR):/work -w /work $(IMAGE)-dev:latest bash
 
+# The compose service mounts an anonymous volume over
+# tools/api-types/node_modules, to keep the bind mount from hiding the modules
+# baked into the image. Docker creates that mount point in this tree, as root,
+# if it is missing, leaving a root-owned directory the owner of the checkout
+# can neither remove nor chmod. Made here first, as the user who owns
+# everything else.
 contract: ## regenerate server/Api/openapi.json and client/src/api-types.d.ts from the code
+	@mkdir -p tools/api-types/node_modules
 	docker compose run --rm --build contract
 
 load: ## run the k6 load harness against the production-like app
@@ -61,9 +79,21 @@ load: ## run the k6 load harness against the production-like app
 verify: ## run the full verification suite with a pass/fail tally
 	./scripts/verify.sh
 
-prose: ## lint every tracked Markdown file against the writing rules (.vale/styles/Abera)
+# actionlint and shellcheck from the Dockerfile's `actionlint` stage, the one
+# place their version is pinned. The CI lint job runs this target.
+LINT_IMAGE = $(shell sed -n 's|^FROM \(rhysd/actionlint:[^ ]*\) AS actionlint$$|\1|p' Dockerfile)
+lint: ## lint the workflows (actionlint, shellcheck on run: blocks) and scripts/*.sh
+	@test -n "$(LINT_IMAGE)" || { echo "error: no 'FROM rhysd/actionlint:... AS actionlint' stage in the Dockerfile" >&2; exit 1; }
+	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint actionlint $(LINT_IMAGE) -color
+	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint shellcheck $(LINT_IMAGE) scripts/*.sh scripts/db/*.sh
+
+generate: ## rename a copy of this tree the way setup.sh does, then build and test the copy
+	./scripts/setup.sh --self-test --build
+
+prose: ## lint the Markdown and the built pages against the writing rules (.vale/styles/Abera)
 	./scripts/check-prose.sh --self-test
 	./scripts/check-prose.sh
+	docker build --target pageprose .
 
 # Toolchain images are derived from the Dockerfile and e2e/package.json the
 # way verify.sh derives them, so the Makefile cannot drift from the images

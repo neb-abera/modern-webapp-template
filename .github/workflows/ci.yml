@@ -53,7 +53,7 @@ jobs:
           persist-credentials: false
 
       - name: set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # CI runs exactly what `make verify` runs locally: the same containers,
       # the same checks, the same tally. The GHA layer cache only changes how
@@ -70,7 +70,7 @@ jobs:
       # whenever GITHUB_STEP_SUMMARY is set, as it is here.
       - name: upload coverage to Codecov (dashboard only, needs CODECOV_TOKEN)
         if: env.CODECOV_TOKEN != ''
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage-artifacts/server-cobertura.xml,coverage-artifacts/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -130,9 +130,44 @@ jobs:
   # Lint the linters: the workflows and shell scripts every other gate is
   # built out of get no checks from the app toolchain, so a typo'd `if:`
   # or an unquoted variable in verify.sh fails silently until it matters.
+  # The commit-msg hook and the Claude PreToolUse gate both run on the machine
+  # making the commit, so a commit made anywhere they are not installed reaches
+  # a pull request untouched. On 2026-09-24 a branch cut from a pre-rewrite
+  # master was merged and put 45 stripped attribution lines back on the default
+  # branch. This runs where the merge happens.
+  #
+  # fetch-depth: 0 because the check reads every commit the pull request would
+  # add, and a shallow clone has no merge base to measure that from.
+  attribution:
+    name: attribution (no AI credit in commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: prove the check can fail
+        run: ./scripts/check-attribution.sh --self-test
+
+      - name: no commit in this pull request credits an AI
+        run: ./scripts/check-attribution.sh "origin/${GITHUB_BASE_REF}..HEAD"
+
   # actionlint validates the workflow files (delegating embedded run: blocks
-  # to shellcheck); shellcheck covers scripts/*.sh and scripts/db/*.sh. Both binaries are
-  # version- and checksum-pinned so this job runs exactly what was reviewed.
+  # to shellcheck); shellcheck covers scripts/*.sh and scripts/db/*.sh. Both
+  # come from the digest-pinned image in the Dockerfile's `actionlint` stage,
+  # the one place their version is written, and `make lint` runs them there.
   lint:
     name: lint (actionlint + shellcheck)
     runs-on: ubuntu-latest
@@ -141,41 +176,17 @@ jobs:
       - name: harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: block
-          # checkout dials github.com; the two release tarballs redirect to
-          # the githubusercontent asset hosts.
-          allowed-endpoints: >
-            github.com:443
-            api.github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
+          # Audit, not block: this job runs containers. A pull under block
+          # with the Docker Hub hosts listed still failed on 2026-09-26: the
+          # layers come from storage hosts that change without notice.
+          egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: install pinned actionlint and shellcheck
-        env:
-          ACTIONLINT_VERSION: 1.7.12
-          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-          SHELLCHECK_VERSION: 0.11.0
-          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
-        run: |
-          cd "$RUNNER_TEMP"
-          curl -fsSLo actionlint.tar.gz \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar -xzf actionlint.tar.gz actionlint
-          curl -fsSLo shellcheck.tar.xz \
-            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          echo "${SHELLCHECK_SHA256}  shellcheck.tar.xz" | sha256sum -c -
-          tar -xJf shellcheck.tar.xz --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
-
-      - name: actionlint (workflows, including embedded shell)
-        run: '"$RUNNER_TEMP/actionlint" -color -shellcheck "$RUNNER_TEMP/shellcheck"'
-
-      - name: shellcheck (scripts/*.sh, scripts/db/*.sh)
-        run: '"$RUNNER_TEMP/shellcheck" scripts/*.sh scripts/db/*.sh'
+      - name: actionlint (workflows, including embedded shell) and shellcheck (scripts)
+        run: make lint
 
       # The monthly upgrade tool (dotnet-major-upgrade.yml) runs unattended,
       # so this is the only run anyone watches: its self-test upgrades a
@@ -185,3 +196,32 @@ jobs:
       # block policy above stays as it is.
       - name: check-dotnet-major.sh self-test (the upgrade tool proves it does the job)
         run: ./scripts/check-dotnet-major.sh --self-test
+
+  # setup.sh runs once per generated repository, where nobody watches it.
+  # This renames a copy of the tree the way setup.sh does, fails on any file
+  # still naming the template, checks the settings it would send against a
+  # stubbed gh, then builds the copy and runs its server, client and
+  # end-to-end tests.
+  generate:
+    name: generate (renamed copy builds and passes its tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          # Audit, not block: this job builds and runs containers, and
+          # container-side DNS bypasses harden-runner's resolver.
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: rename a copy, then build and test it
+        env:
+          VERIFY_DOCKER_BUILD_ARGS: --load --cache-from type=gha
+        run: make generate
