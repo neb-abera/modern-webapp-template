@@ -82,10 +82,12 @@ verify: ## run the full verification suite with a pass/fail tally
 # actionlint and shellcheck from the Dockerfile's `actionlint` stage, the one
 # place their version is pinned. The CI lint job runs this target.
 LINT_IMAGE = $(shell sed -n 's|^FROM \(rhysd/actionlint:[^ ]*\) AS actionlint$$|\1|p' Dockerfile)
-lint: ## lint the workflows (actionlint, shellcheck on run: blocks) and scripts/*.sh
+lint: ## lint the workflows (actionlint, shellcheck on run: blocks, concurrency groups) and scripts/*.sh
 	@test -n "$(LINT_IMAGE)" || { echo "error: no 'FROM rhysd/actionlint:... AS actionlint' stage in the Dockerfile" >&2; exit 1; }
 	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint actionlint $(LINT_IMAGE) -color
 	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint shellcheck $(LINT_IMAGE) scripts/*.sh scripts/db/*.sh
+	./scripts/check-concurrency.sh --self-test
+	./scripts/check-concurrency.sh
 
 generate: ## rename a copy of this tree the way setup.sh does, then build and test the copy
 	./scripts/setup.sh --self-test --build
