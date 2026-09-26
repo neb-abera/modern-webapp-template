@@ -30,6 +30,9 @@ every change, and CI runs the same script.
   the way the C++ and Rust templates give it a libFuzzer or cargo-fuzz
   target. Seeded, bounded, and a failing run prints the seed and the
   shrunk input.
+  The C++ and Rust templates also prove their library with CBMC and Kani.
+  This template has no proof gate, because no mainstream prover checks
+  TypeScript or C# application code.
 
 * **One verification suite.** `make verify` runs every check with a
   pass/fail tally. CI runs the same script. Each checker plants the defect it
