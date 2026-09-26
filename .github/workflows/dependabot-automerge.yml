@@ -33,7 +33,7 @@ permissions: {}
 
 jobs:
   automerge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # The PR must be Dependabot's, and so must the event. A human pushing to
     # a Dependabot branch (the Update branch button, a merge of the default
