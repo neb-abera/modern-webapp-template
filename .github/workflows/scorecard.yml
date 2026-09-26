@@ -12,11 +12,14 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request makes the running check obsolete. A newer
-# push to the default branch does not: cancelling it left a merge commit
-# with no checks and no scan (aberaTech #169, 2026-09-18).
+# Outside a pull request each commit gets its own group. A group holds one
+# running and one pending run, and a third run cancels the pending one
+# whatever cancel-in-progress says. Keyed by branch, that left aberaTech
+# 2d7cced and aab70ed with no checks on 2026-09-26. On a pull request a
+# newer push still cancels the older run. scripts/check-concurrency.sh
+# enforces this.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

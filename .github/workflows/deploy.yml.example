@@ -17,6 +17,12 @@ on:
   # For redeploying the current main without a new commit.
   workflow_dispatch:
 
+# One deploy at a time, never cancelled: a cancelled deploy is half a
+# rollout. The group holds one running and one pending run, and a newer run
+# replaces the pending one. Checks finish in any order, so the replaced run
+# can be for a newer commit than the one that replaces it. Nothing is lost:
+# every run deploys the tip of the default branch (the target job), not the
+# commit that triggered it.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -28,17 +34,55 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  # Checks run once per commit, so two merges minutes apart can pass in
+  # either order. Deploying the commit that triggered the run would then
+  # roll production back to the older one. This job names the tip of the
+  # default branch, and only once the tip's own checks have passed. While
+  # they are still running it names nothing, and the tip's own run deploys.
+  target:
     # workflow_run fires whether or not the checks passed, so a failed run has
     # to be filtered out here rather than assumed away.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.tip.outputs.sha }}
+    steps:
+      - name: the tip of the default branch, once its checks passed
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+          CHECKS: ${{ github.event.workflow_run.workflow_id }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BRANCH" --jq .sha)
+          # A manual redeploy takes the tip as it is.
+          if [ "$EVENT" != workflow_dispatch ]; then
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$CHECKS/runs?head_sha=$tip&status=success" --jq .total_count)
+            if [ "$passed" = 0 ]; then
+              echo "::notice::$BRANCH is at $tip and its checks have not passed yet. Its own run deploys it."
+              exit 0
+            fi
+          fi
+          echo "deploying $tip"
+          echo "sha=$tip" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: target
+    if: needs.target.outputs.sha != ''
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
 
     env:
+      SHA: ${{ needs.target.outputs.sha }}
       REGISTRY: ${{ vars.ACR_LOGIN_SERVER }}
       CONTAINER_APP: ${{ vars.CONTAINER_APP_NAME }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -46,8 +90,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Be explicit about the commit that passed the checks.
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # The tip of the default branch, checked, as the target job found it.
+          ref: ${{ needs.target.outputs.sha }}
           # This job never pushes to git; don't persist the token.
           persist-credentials: false
 
@@ -69,9 +113,9 @@ jobs:
           set -euo pipefail
           az acr login --name "${REGISTRY%%.*}"
           docker build \
-            --tag "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --tag "$REGISTRY/$IMAGE:$SHA" \
             --tag "$REGISTRY/$IMAGE:latest" .
-          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE:$SHA"
           docker push "$REGISTRY/$IMAGE:latest"
 
       # Schema changes are their own step, as the migrator role, before the
@@ -90,7 +134,7 @@ jobs:
             exit 0
           fi
           docker run --rm -e "ConnectionStrings__Default=$MIGRATOR_CONNECTION_STRING" \
-            "$REGISTRY/$IMAGE:${{ github.sha }}" --migrate
+            "$REGISTRY/$IMAGE:$SHA" --migrate
 
       # Deploy the immutable tag: a revision names exactly what it runs, and
       # rollback is redeploying a previous SHA.
@@ -113,7 +157,7 @@ jobs:
           az containerapp update \
             --name "$CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --image "$REGISTRY/$IMAGE:$SHA" \
             --set-env-vars "HostAllowlist__Hosts=$ALLOWED_HOSTS" "ForwardedHeaders__TrustedHops=$TRUSTED_HOPS"
 
       # `az containerapp update` returns once the revision is created, not

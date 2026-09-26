@@ -5,10 +5,9 @@ on:
     tags:
       - "v*"
 
-# One release at a time, never cancelled mid-publish.
-concurrency:
-  group: release
-  cancel-in-progress: false
+# No concurrency group. A group holds one running and one pending run, and
+# a third run replaces the pending one, so a fixed group left the middle of
+# three tags pushed together with no release. Each tag runs on its own.
 
 # Least-privilege: this workflow verifies, publishes the container image to
 # GHCR and creates the GitHub Release.
@@ -68,15 +67,25 @@ jobs:
 
       # github.ref_name is passed through env rather than interpolated into
       # the script: tag names may contain shell metacharacters.
+      # Tags release in parallel, so the last to finish is not always the
+      # newest. :latest moves only when this tag is the highest v* tag that
+      # is not a pre-release (no hyphen, so v2.0.0-rc.1 never takes it).
       - name: build and push image
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
           image="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
-          docker build -t "$image:$TAG" -t "$image:latest" .
+          docker build -t "$image:$TAG" .
           docker push "$image:$TAG"
-          docker push "$image:latest"
+          highest=$(gh api --paginate "repos/$REPO/git/matching-refs/tags/v" --jq '.[].ref' | sed 's#^refs/tags/##' | grep -v -- - | sort -V | tail -n 1)
+          if [ "$TAG" = "$highest" ]; then
+            docker tag "$image:$TAG" "$image:latest"
+            docker push "$image:latest"
+          else
+            echo "::notice::$TAG is not the highest tag ($highest), so :latest stays where it is"
+          fi
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image:$TAG" | cut -d@ -f2)
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
