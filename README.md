@@ -89,7 +89,7 @@ every change, and CI runs the same script.
   prerendered HTML the image ships, as a reader is given it. Check 3 of the
   suite.
 
-* **Toolchain.** .NET 10 LTS, React 19, Vite 8, Vitest 4, TypeScript 7,
+* **Toolchain.** .NET 10, React 19, Vite 8, Vitest 4, TypeScript 7,
   Biome 2, Playwright, Node 26.
 
 * **Kept current by Dependabot** on every ecosystem (both npm manifests,
@@ -100,12 +100,12 @@ every change, and CI runs the same script.
   `DEPENDABOT_AUTOMERGE_TOKEN` secret (a fine-grained PAT with contents and
   pull-requests write, so the merge still triggers CI and deploys). A major
   that passes merges itself. One that breaks stays open and red. The monthly
-  `dotnet-major-upgrade` workflow opens the PR for the next LTS .NET major
+  `dotnet-major-upgrade` workflow opens the PR for the next GA .NET major
   (close and reopen it to trigger CI). Scripts derive toolchain versions from
   the Dockerfile and `e2e/package.json`.
-  Only LTS majors of .NET and Node arrive. `.github/dependabot.yml` ignores
-  each major that is not LTS yet, and `scripts/check-lts-majors.sh` in the
-  lint job fails when those ranges fall behind the release schedules.
+  The newest GA major of .NET and Node arrives, LTS or not.
+  `scripts/check-newest-majors.sh` in the lint job fails when Dependabot
+  holds one back, and when a site is 45 days behind it.
 
 * **Releases from tags.** Pushing `v*` re-verifies, publishes the image to
   GHCR and creates a GitHub Release.
