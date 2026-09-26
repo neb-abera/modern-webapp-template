@@ -94,11 +94,15 @@ services:
       - /work/tools/api-types/node_modules
 
   # Load-test harness (`make load`): k6 drives the production-like app.
-  # A harness rather than a CI gate - shared runners make load numbers
-  # noise; run it on quiet hardware when you want real answers.
+  # verify.sh runs the same script and image as a smoke gate (one user,
+  # correctness thresholds only). Latency is judged here alone, on quiet
+  # hardware: shared runners make load numbers noise.
   k6:
     profiles: [load]
-    image: grafana/k6:2.2.0
+    image: grafana/k6:2.2.0@sha256:9bd01d6941fca969cb61bb57d2da5ee9b385fe2aa8881df3798c196564d6ace6
+    # As the checkout's owner: the image's own user cannot read a tree left
+    # at rw-rw---- by a umask of 007, and k6 then exits 255 before a request.
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     volumes:
       - ./load:/scripts:ro
     environment:

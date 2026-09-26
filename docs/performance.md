@@ -20,9 +20,13 @@ option here rather than the template default.
 
 `make load` runs a k6 baseline against the production-like container: enough
 traffic to surface gross regressions (a lost cache header, an accidental
-N+1), with thresholds on error rate and p95 latency. It is not a CI gate,
-because shared runners make load numbers noise. Run it on quiet hardware and
-tune `load/smoke.js` to your app's real endpoints.
+N+1), with thresholds on error rate and p95 latency. Run it on quiet
+hardware and tune `load/smoke.js` to your app's real endpoints.
+
+`make verify` runs the same script with `LOAD_PROFILE=smoke`: one user,
+three passes, and thresholds on checks and failed requests only. That gate
+proves the harness still builds, runs and reaches the app. It never judges
+latency, because shared runners make load numbers noise.
 
 ## Delivery
 
