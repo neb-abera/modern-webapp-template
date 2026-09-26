@@ -14,6 +14,7 @@ workflow .github/workflows/security-scan.yml
 check verify
 check attribution (no AI credit in commits)
 check lint (actionlint + shellcheck)
+check generate (renamed copy builds and passes its tests)
 check dependency review
 check analyze (csharp)
 check analyze (javascript-typescript)

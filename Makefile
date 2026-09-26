@@ -1,4 +1,4 @@
-.PHONY: run dev ports shell contract verify prose test-server test-client e2e clean help load
+.PHONY: run dev ports shell contract verify prose lint generate test-server test-client e2e clean help load
 .DEFAULT_GOAL := help
 
 define PRINT_HELP_PYSCRIPT
@@ -78,6 +78,17 @@ load: ## run the k6 load harness against the production-like app
 
 verify: ## run the full verification suite with a pass/fail tally
 	./scripts/verify.sh
+
+# actionlint and shellcheck from the Dockerfile's `actionlint` stage, the one
+# place their version is pinned. The CI lint job runs this target.
+LINT_IMAGE = $(shell sed -n 's|^FROM \(rhysd/actionlint:[^ ]*\) AS actionlint$$|\1|p' Dockerfile)
+lint: ## lint the workflows (actionlint, shellcheck on run: blocks) and scripts/*.sh
+	@test -n "$(LINT_IMAGE)" || { echo "error: no 'FROM rhysd/actionlint:... AS actionlint' stage in the Dockerfile" >&2; exit 1; }
+	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint actionlint $(LINT_IMAGE) -color
+	docker run --rm --user $(HOST_UID):$(HOST_GID) -v $(CURDIR):/repo:ro -w /repo --entrypoint shellcheck $(LINT_IMAGE) scripts/*.sh scripts/db/*.sh
+
+generate: ## rename a copy of this tree the way setup.sh does, then build and test the copy
+	./scripts/setup.sh --self-test --build
 
 prose: ## lint the Markdown and the built pages against the writing rules (.vale/styles/Abera)
 	./scripts/check-prose.sh --self-test
