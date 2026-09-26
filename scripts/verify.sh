@@ -94,7 +94,10 @@ case "$1" in
     fi ;;
   image) echo 1654 ;;
   inspect) if [[ "$args" == *ExitCode* ]]; then echo "exited 0"; else echo exited; fi ;;
-  logs) echo "migrate: applied"; echo "HostAllowlist__Hosts is not set" ;;
+  # The app's log goes on after the line the smoke test looks for, as a
+  # crashing .NET process does. A reader that stops at the match closes the
+  # pipe, and the late line then dies of SIGPIPE.
+  logs) echo "migrate: applied"; echo "HostAllowlist__Hosts is not set"; sleep 0.3; echo "   at Program.<Main>(String[] args)" ;;
   exec) [[ "$args" == *ASPNETCORE_HTTP_PORTS=8099* ]] && exit 1 ;;
   run)
     if [[ "$args" == *grafana/k6* ]]; then
@@ -575,7 +578,7 @@ fi
 # foreground, so an image that serves instead fails here in 30 s rather than
 # hanging the suite.
 migrate_applies_and_exits() {
-  local ctr="$NAME-verify-migrate" state=""
+  local ctr="$NAME-verify-migrate" state="" logs
   docker rm -f "$ctr" > /dev/null 2>&1
   docker run -d --name "$ctr" "$IMAGE" --migrate > /dev/null || return 1
   for _ in $(seq 1 30); do
@@ -583,7 +586,11 @@ migrate_applies_and_exits() {
     [ "${state%% *}" = exited ] && break
     sleep 1
   done
-  docker logs "$ctr" 2>&1 | grep -q '^migrate:' || state="no migrate output"
+  # The log is read whole before it is searched. Under pipefail, grep -q
+  # closing the pipe at its match fails the pipeline with SIGPIPE whenever
+  # the container logs another line after it.
+  logs="$(docker logs "$ctr" 2>&1)"
+  grep -q '^migrate:' <<< "$logs" || state="no migrate output"
   if [ "$state" != "exited 0" ]; then
     echo "--migrate did not apply and exit 0 (got: $state)"
     docker logs "$ctr" 2>&1 | tail -20
@@ -597,7 +604,7 @@ migrate_applies_and_exits() {
 # the variable, not serve every Host. Polled like --migrate, so an image that
 # serves instead fails in 30 s rather than hanging the suite.
 refuses_to_start_without_hosts() {
-  local ctr="$NAME-verify-nohosts" state="" named=""
+  local ctr="$NAME-verify-nohosts" state="" named="" logs
   docker rm -f "$ctr" > /dev/null 2>&1
   docker run -d --name "$ctr" "$IMAGE" > /dev/null || return 1
   for _ in $(seq 1 30); do
@@ -605,7 +612,8 @@ refuses_to_start_without_hosts() {
     [ "$state" = exited ] && break
     sleep 1
   done
-  docker logs "$ctr" 2>&1 | grep -q 'HostAllowlist__Hosts' && named=yes
+  logs="$(docker logs "$ctr" 2>&1)"
+  grep -q 'HostAllowlist__Hosts' <<< "$logs" && named=yes
   if [ "$state" != exited ] || [ "$named" != yes ]; then
     # The evidence is this container's, not the main app's: say what it did.
     echo "image with no hosts configured did not refuse to start (state: $state, exit code: $(docker inspect --format '{{.State.ExitCode}}' "$ctr" 2> /dev/null))"
