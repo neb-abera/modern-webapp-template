@@ -20,6 +20,15 @@
 # Not covered by Dependabot: <TargetFramework> in server/Directory.Build.props
 # and the cross-major jumps it gates — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) covers those.
+#
+# LTS majors only. .NET LTS majors are even and ship every other November.
+# A Node major turns LTS in the October after its release. The ignore
+# ranges below hold back each major that is not LTS, one range per major.
+# Dependabot reads them in Bundler syntax against the version, so digest,
+# minor and patch updates of the current major still arrive.
+# scripts/check-lts-majors.sh fails when a range is missing for a major due
+# within two years, when a Node major has turned LTS and its range is still
+# here, and when @types/node and the node image drift apart.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -38,6 +47,17 @@ updates:
       interval: weekly
     cooldown:
       default-days: 5
+    ignore:
+      - dependency-name: "dotnet/*"
+        versions:
+          - ">= 11, < 12"
+          - ">= 13, < 14"
+          - ">= 15, < 16"
+      - dependency-name: node
+        versions:
+          - ">= 27, < 28"
+          - ">= 28, < 29"
+          - ">= 29, < 30"
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
@@ -61,6 +81,18 @@ updates:
       interval: weekly
     cooldown:
       default-days: 5
+    # The framework packages carry the runtime's major.
+    ignore:
+      - dependency-name: "Microsoft.AspNetCore.*"
+        versions:
+          - ">= 11, < 12"
+          - ">= 13, < 14"
+          - ">= 15, < 16"
+      - dependency-name: "Microsoft.Extensions.*"
+        versions:
+          - ">= 11, < 12"
+          - ">= 13, < 14"
+          - ">= 15, < 16"
     groups:
       nuget-minor-patch:
         update-types: [minor, patch]
@@ -71,6 +103,13 @@ updates:
       interval: weekly
     cooldown:
       default-days: 5
+    # The node image's ranges: the types follow the runtime.
+    ignore:
+      - dependency-name: "@types/node"
+        versions:
+          - ">= 27, < 28"
+          - ">= 28, < 29"
+          - ">= 29, < 30"
     groups:
       # vitest and @vitest/* peer-depend on each other's exact version, so a
       # major split across two PRs cannot install in either (vitest 5, 2026-09:
