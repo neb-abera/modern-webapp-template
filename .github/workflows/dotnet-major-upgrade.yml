@@ -1,11 +1,11 @@
-# Opens a PR moving the repo to a newly-GA .NET major. Dependabot keeps
+# Opens a PR moving the repo to a newly-GA LTS .NET major. Dependabot keeps
 # every dependency current within a major but never crosses one, because
 # <TargetFramework> gates the images and the Microsoft.AspNetCore.*
 # packages; scripts/check-dotnet-major.sh makes that cross-major jump with
 # all the lockstep sites in one commit.
 #
-# Runs monthly (majors GA each November) and does nothing when already
-# current. PRs opened with the default workflow token do not trigger CI —
+# Runs monthly (an LTS major ships every other November, and the odd STS
+# majors are skipped) and does nothing when already current. PRs opened with the default workflow token do not trigger CI —
 # close and reopen the PR (or push an empty commit) to run the checks.
 name: dotnet-major-upgrade
 
@@ -40,7 +40,7 @@ jobs:
       - name: Prove the upgrade script still does the job
         run: scripts/check-dotnet-major.sh --self-test
 
-      - name: Check for a newer GA .NET major
+      - name: Check for a newer LTS .NET major
         id: check
         run: SUMMARY_FILE="$RUNNER_TEMP/dotnet-major-summary.md" scripts/check-dotnet-major.sh
 
