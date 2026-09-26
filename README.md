@@ -100,9 +100,12 @@ every change, and CI runs the same script.
   `DEPENDABOT_AUTOMERGE_TOKEN` secret (a fine-grained PAT with contents and
   pull-requests write, so the merge still triggers CI and deploys). A major
   that passes merges itself. One that breaks stays open and red. The monthly
-  `dotnet-major-upgrade` workflow opens the .NET major PR (close and reopen
-  it to trigger CI). Scripts derive toolchain versions from the Dockerfile
-  and `e2e/package.json`.
+  `dotnet-major-upgrade` workflow opens the PR for the next LTS .NET major
+  (close and reopen it to trigger CI). Scripts derive toolchain versions from
+  the Dockerfile and `e2e/package.json`.
+  Only LTS majors of .NET and Node arrive. `.github/dependabot.yml` ignores
+  each major that is not LTS yet, and `scripts/check-lts-majors.sh` in the
+  lint job fails when those ranges fall behind the release schedules.
 
 * **Releases from tags.** Pushing `v*` re-verifies, publishes the image to
   GHCR and creates a GitHub Release.
