@@ -1,6 +1,6 @@
 # Opens a PR moving the repo to a newly GA .NET major, LTS or STS.
-# Dependabot keeps
-# every dependency current within a major but never crosses one, because
+# Dependabot keeps every dependency current within a major but never
+# crosses one, because
 # <TargetFramework> gates the images and every package versioned with the
 # framework; scripts/check-dotnet-major.sh makes that cross-major jump with
 # all the lockstep sites in one commit.
