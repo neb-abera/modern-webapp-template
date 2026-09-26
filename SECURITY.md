@@ -49,8 +49,8 @@ Projects generated from this template ship with:
   digests, both kept current by Dependabot (actions, docker, docker-compose,
   nuget and both npm ecosystems, patch/minor bumps grouped per ecosystem),
   with the monthly `dotnet-major-upgrade` workflow covering the jump to the
-  next LTS .NET major that Dependabot cannot make, ignore ranges holding back
-  every .NET and Node major that is not LTS (`scripts/check-lts-majors.sh`),
+  next GA .NET major that Dependabot cannot make, a check that .NET and Node
+  are on their newest GA majors (`scripts/check-newest-majors.sh`),
   and the verify suite's held-majors check
   covering the npm major Dependabot cannot offer because it does not install
   and the NuGet major it cannot offer because no referencing project can

@@ -50,11 +50,144 @@
 #   - end-to-end: Playwright against the production container
 #   - mutation canary: a planted server bug must fail the tests
 #
+# A check that needs an earlier one is skipped when that one failed, and the
+# skip names it: the byte budget, the smoke test, the load harness and the
+# end-to-end suite need the production image, the last two need the running
+# container, and the mutation canary needs green server tests. So the report
+# leads with the failure that caused the rest. Before this, an image that did
+# not build sent the end-to-end suite at a container that never started, and
+# eight CI runs of ERR_NAME_NOT_RESOLVED were read as a delivery.spec flake.
+# The first check proves it: scripts/verify.sh --self-test runs this script
+# on a copy of the tree with Docker, curl and the other checkers stubbed. A
+# green copy must run the end-to-end suite and pass. A copy whose image does
+# not build must not run it, and must report the build as its one failure. A
+# copy whose server tests fail must not score the mutation canary.
+#
 # Exit code 0 means everything passed.
 
 set -u -o pipefail
 
 cd "$(dirname "$0")/.." || exit 1
+
+# verify_self_test: run this script on stubbed copies of the tree (see the
+# header) and check what it ran and what it reported.
+verify_self_test() {
+  local dir bin failed=0 code out ran
+  dir="$(mktemp -d)"
+  # shellcheck disable=SC2064 # expand now: the directory name is fixed
+  trap "rm -rf '$dir'" EXIT
+  bin="$dir/bin"
+  mkdir -p "$bin"
+  # docker: every call is logged. The production image build fails when
+  # STUB_BUILD=fail. The server tests fail when STUB_SERVER=fail, and when
+  # the canary's planted greeting is in the tree, and report their counts the
+  # way the .NET runner does. Everything else answers as a healthy image would.
+  cat > "$bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG"
+args=" $* "
+case "$1" in
+  build)
+    if [ "${STUB_BUILD:-}" = fail ] && [[ "$args" == *" -t $STUB_IMAGE "* ]]; then
+      echo "planted: the production image does not build" >&2
+      exit 1
+    fi ;;
+  image) echo 1654 ;;
+  inspect) if [[ "$args" == *ExitCode* ]]; then echo "exited 0"; else echo exited; fi ;;
+  # The app's log goes on after the line the smoke test looks for, as a
+  # crashing .NET process does. A reader that stops at the match closes the
+  # pipe, and the late line then dies of SIGPIPE.
+  logs) echo "migrate: applied"; echo "HostAllowlist__Hosts is not set"; sleep 0.3; echo "   at Program.<Main>(String[] args)" ;;
+  exec) [[ "$args" == *ASPNETCORE_HTTP_PORTS=8099* ]] && exit 1 ;;
+  run)
+    if [[ "$args" == *grafana/k6* ]]; then
+      [[ "$args" == *":9 "* ]] && exit 99
+    elif [[ "$args" == *COVERAGE_MODE=* ]]; then
+      if [ "${STUB_SERVER:-}" = fail ] || grep -q Goodbye server/Api/Program.cs; then
+        echo "Test summary: total: 5, failed: 1, succeeded: 4"
+        exit 1
+      fi
+      echo "Test summary: total: 5, failed: 0, succeeded: 5"
+      echo "server line coverage: 90.0% (minimum 85%)"
+    elif [[ "$args" == *":/out "* ]]; then
+      out="${args%%:/out *}"; out="${out##* }"
+      cp server/Api/openapi.json client/src/api-types.d.ts "$out/"
+    elif [[ "$args" == *mcr.microsoft.com/playwright* ]]; then
+      echo "3 passed"
+    fi ;;
+esac
+exit 0
+STUB
+  # curl: the answers the smoke test expects from a healthy container.
+  cat > "$bin/curl" <<'STUB'
+#!/usr/bin/env bash
+args=" $* "
+if [[ "$args" == *http_code* ]]; then
+  if [[ "$args" == */healthz* ]]; then echo 200; else echo 400; fi
+else
+  echo '<div id="root"> {"message":"Hello from the API"} x-content-type-options: nosniff'
+fi
+STUB
+  chmod +x "$bin/docker" "$bin/curl"
+
+  # run_copy <scenario> [VAR=value...]: verify.sh on a fresh copy of the
+  # tracked tree, every other checker replaced by one that passes. Sets
+  # code, out and ran (the docker calls it made).
+  run_copy() {
+    local copy="$dir/$1" f
+    shift
+    mkdir -p "$copy"
+    git ls-files | tar -cf - -T - | tar -xf - -C "$copy"
+    cp scripts/verify.sh "$copy/scripts/verify.sh"
+    for f in "$copy"/scripts/*.sh "$copy"/scripts/*/*.sh; do
+      [ -f "$f" ] && [ "$f" != "$copy/scripts/verify.sh" ] || continue
+      printf '#!/bin/sh\nexit 0\n' > "$f"
+    done
+    : > "$copy.docker"
+    code=0
+    out="$(cd "$copy" && env -u GITHUB_STEP_SUMMARY -u GITHUB_ACTIONS -u CI PATH="$bin:$PATH" \
+      STUB_LOG="$copy.docker" STUB_IMAGE="$(basename "$copy" | tr '[:upper:]' '[:lower:]'):latest" \
+      VERIFY_SELF_TEST_INNER=1 NO_COLOR=1 "$@" ./scripts/verify.sh 2>&1)" || code=$?
+    ran="$(cat "$copy.docker")"
+  }
+  ok() { echo "self-test: ok: $1"; }
+  flunk() { echo "self-test FAILED: $1" >&2; printf '%s\n' "$out" | tail -30 | sed 's/^/    /' >&2; failed=1; }
+  check() { if "${@:2}"; then ok "$1"; else flunk "$1"; fi; }
+  # shellcheck disable=SC2329  # invoked through check()
+  absent() { ! grep -Eq "$1" <<< "$ran"; }
+  # shellcheck disable=SC2329  # invoked through check()
+  absent_in_out() { ! grep -Eq "$1" <<< "$out"; }
+  failures() { printf '%s\n' "$out" | awk '/^FAILURES:/ { f = 1; next } /^NOT RUN/ { f = 0 } f && sub(/^  - /, "")'; }
+
+  run_copy green
+  check "a tree whose checks all pass exits 0 (exit $code)" [ "$code" -eq 0 ]
+  check "and it ran the end-to-end suite" grep -q 'mcr.microsoft.com/playwright' <<< "$ran"
+  check "and the load harness" grep -q 'grafana/k6' <<< "$ran"
+
+  run_copy nobuild STUB_BUILD=fail
+  check "a production image that does not build fails the run (exit $code)" [ "$code" -eq 1 ]
+  check "the build is the one failure reported" [ "$(failures)" = "Production image build" ]
+  check "the end-to-end suite never ran" absent 'mcr\.microsoft\.com/playwright'
+  check "nor the load harness, nor the smoke container" absent 'grafana/k6|--name nobuild-verify-app'
+  check "and each is reported as not run, naming the build" \
+    grep -q '^\[SKIP\] End-to-end suite (not run: "Production image build" failed first)' <<< "$out"
+
+  run_copy noserver STUB_SERVER=fail
+  check "failing server tests fail the run (exit $code)" [ "$code" -eq 1 ]
+  check "and the mutation canary is not scored against them" [ "$(failures)" = "Server build/tests/coverage" ]
+  check "the canary did not pass on the failures already there" absent_in_out '^\[PASS\] Mutation canary'
+  check "it says why" grep -q '^\[SKIP\] Mutation canary (not run: "Server build/tests/coverage" failed first)' <<< "$out"
+
+  if [ "$failed" -eq 0 ]; then
+    echo "self-test: a green tree ran every check, an image that did not build stopped the checks that need it and was the one failure named, and failing server tests kept the canary from passing"
+  fi
+  return "$failed"
+}
+
+if [ "${1:-}" = --self-test ]; then
+  verify_self_test
+  exit $?
+fi
 
 NAME="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
 IMAGE="$NAME:latest"
@@ -148,6 +281,35 @@ fail() {
   tally
 }
 
+skip() {
+  CHECKS_RUN=$((CHECKS_RUN + 1)); CHECKS_SKIPPED=$((CHECKS_SKIPPED + 1))
+  summary_row "skipped"
+  printf '%s[SKIP]%s %s\n' "$YELLOW" "$RESET" "$1"
+}
+
+# What a later check depends on, and the failed check that broke it: one
+# "<key><TAB><check name>" line per broken prerequisite (see the header).
+BROKEN=""
+broke() { BROKEN="$BROKEN$1"$'\t'"$2"$'\n'; }
+NOT_RUN=""
+# blocked <key> <check> <prerequisite key>...: when a prerequisite is
+# broken, skip <check> naming the failure behind it, mark <key> broken by
+# the same failure for the checks after, and succeed.
+blocked() {
+  local key="$1" what="$2" p cause
+  shift 2
+  for p; do
+    cause="$(printf '%s' "$BROKEN" | awk -F '\t' -v k="$p" '$1 == k { print $2; exit }')"
+    if [ -n "$cause" ]; then
+      broke "$key" "$cause"
+      NOT_RUN="$NOT_RUN  - $what\n"
+      skip "$what (not run: \"$cause\" failed first)"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Add "N passed / M failed" style counts found in a tool's output to the tally.
 count_tests() {
   local passed="$1" failed="$2"
@@ -205,6 +367,19 @@ server_tests() {
 # succeeded: N"; older runners print "Passed: N / Failed: N".
 server_passed() { grep -Eo 'succeeded: [0-9]+|Passed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 server_failed() { grep -Eo 'failed: [0-9]+|Failed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
+
+banner "Verify itself: a failed check stops the checks that need it"
+# The stubbed copies run this script, so inside them the check is skipped
+# rather than run again.
+if [ -n "${VERIFY_SELF_TEST_INNER:-}" ]; then
+  skip "Verify itself (inside its own self-test)"
+elif ./scripts/verify.sh --self-test > "$LOG" 2>&1; then
+  grep -E '^self-test' "$LOG" || true
+  pass "A failed image build stops the checks that need the image, and is the failure reported"
+else
+  cat "$LOG"
+  fail "Verify itself (the self-test: a check ran without its prerequisite, or the report named the wrong failure)"
+fi
 
 banner "Required checks: .github/required-checks matches the pull-request jobs"
 # The self-test runs first, every time, here and before every other checker
@@ -272,6 +447,7 @@ if server_tests coverage 2>&1 | tee "$LOG"; then
   pass "Server builds clean, all tests green, coverage >= ${SERVER_COVERAGE_MIN}%"
 else
   count_tests "$(server_passed)" "$(server_failed)"
+  broke server "Server build/tests/coverage"
   fail "Server build/tests/coverage"
 fi
 
@@ -383,12 +559,15 @@ if docker build ${VERIFY_DOCKER_BUILD_ARGS:-} -t "$IMAGE" . > "$LOG" 2>&1; then
   pass "Production image built as $IMAGE"
 else
   tail -25 "$LOG"
+  broke image "Production image build"
   fail "Production image build"
 fi
 
 banner "Byte budget: the production client build, in compressed bytes"
 # Bytes, not timing: the same numbers on a laptop and on a shared runner.
-if ./scripts/check-byte-budget.sh "$IMAGE" 2>&1 | tee "$LOG"; then
+if blocked budget "Byte budget" image; then
+  :
+elif ./scripts/check-byte-budget.sh "$IMAGE" 2>&1 | tee "$LOG"; then
   pass "Entry JS/CSS, initial total and prerendered HTML are within client/byte-budget.json (and the checker failed one byte over)"
 else
   fail "Byte budget (something grew past client/byte-budget.json, or the checker's self-test)"
@@ -399,7 +578,7 @@ fi
 # foreground, so an image that serves instead fails here in 30 s rather than
 # hanging the suite.
 migrate_applies_and_exits() {
-  local ctr="$NAME-verify-migrate" state=""
+  local ctr="$NAME-verify-migrate" state="" logs
   docker rm -f "$ctr" > /dev/null 2>&1
   docker run -d --name "$ctr" "$IMAGE" --migrate > /dev/null || return 1
   for _ in $(seq 1 30); do
@@ -407,7 +586,11 @@ migrate_applies_and_exits() {
     [ "${state%% *}" = exited ] && break
     sleep 1
   done
-  docker logs "$ctr" 2>&1 | grep -q '^migrate:' || state="no migrate output"
+  # The log is read whole before it is searched. Under pipefail, grep -q
+  # closing the pipe at its match fails the pipeline with SIGPIPE whenever
+  # the container logs another line after it.
+  logs="$(docker logs "$ctr" 2>&1)"
+  grep -q '^migrate:' <<< "$logs" || state="no migrate output"
   if [ "$state" != "exited 0" ]; then
     echo "--migrate did not apply and exit 0 (got: $state)"
     docker logs "$ctr" 2>&1 | tail -20
@@ -421,7 +604,7 @@ migrate_applies_and_exits() {
 # the variable, not serve every Host. Polled like --migrate, so an image that
 # serves instead fails in 30 s rather than hanging the suite.
 refuses_to_start_without_hosts() {
-  local ctr="$NAME-verify-nohosts" state="" named=""
+  local ctr="$NAME-verify-nohosts" state="" named="" logs
   docker rm -f "$ctr" > /dev/null 2>&1
   docker run -d --name "$ctr" "$IMAGE" > /dev/null || return 1
   for _ in $(seq 1 30); do
@@ -429,7 +612,8 @@ refuses_to_start_without_hosts() {
     [ "$state" = exited ] && break
     sleep 1
   done
-  docker logs "$ctr" 2>&1 | grep -q 'HostAllowlist__Hosts' && named=yes
+  logs="$(docker logs "$ctr" 2>&1)"
+  grep -q 'HostAllowlist__Hosts' <<< "$logs" && named=yes
   if [ "$state" != exited ] || [ "$named" != yes ]; then
     # The evidence is this container's, not the main app's: say what it did.
     echo "image with no hosts configured did not refuse to start (state: $state, exit code: $(docker inspect --format '{{.State.ExitCode}}' "$ctr" 2> /dev/null))"
@@ -460,7 +644,9 @@ docker rm -f "$APP" > /dev/null 2>&1
 # unhealthy code, not a crash) when ASPNETCORE_HTTP_PORTS names a port
 # nothing listens on — a probe that cannot say "unhealthy" would keep a
 # dead revision in rotation.
-if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
+if blocked container "Production container smoke test" image; then
+  :
+elif docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][0-9]*(:[0-9]+)?$' \
    && docker run -d --rm --name "$APP" --network "$NET" -p "127.0.0.1:$SMOKE_PORT:8080" \
         -e "HostAllowlist__Hosts=localhost,$APP" "$IMAGE" > /dev/null \
    && for _ in $(seq 1 30); do curl -fsS "http://localhost:$SMOKE_PORT/healthz" > /dev/null 2>&1 && break; sleep 1; done \
@@ -477,6 +663,7 @@ if docker image inspect --format '{{.Config.User}}' "$IMAGE" | grep -Eq '^[1-9][
   pass "Container serves the client, API, health and security headers as non-root; --healthcheck tells a live port from a dead one"
 else
   docker logs "$APP" 2>&1 | tail -40
+  broke container "Production container smoke test"
   fail "Production container smoke test"
 fi
 
@@ -493,8 +680,9 @@ k6_smoke() { # k6_smoke <base url>
     -e BASE_URL="$1" -e LOAD_PROFILE=smoke "$K6_IMAGE" run --quiet /scripts/smoke.js
 }
 k6_planted=0
-k6_smoke "http://$APP:9" > "$LOG" 2>&1 || k6_planted=$?
-if [ "$k6_planted" -ne 99 ]; then
+if blocked load "Load harness" container; then
+  :
+elif ! { k6_smoke "http://$APP:9" > "$LOG" 2>&1 || k6_planted=$?; [ "$k6_planted" -eq 99 ]; }; then
   tail -20 "$LOG"
   fail "Load harness (the planted run at a dead port exited $k6_planted, not 99: the harness did not run)"
 elif k6_smoke "http://$APP:8080" 2>&1 | tee "$LOG"; then
@@ -513,7 +701,9 @@ docker rm -f "$E2E_CTR" > /dev/null 2>&1
 # The suite reads client/src/prerenderedRoutes.ts (the list the prerender
 # tool bakes) to prove every prerendered route with JavaScript off, so that
 # one file travels with it at the same relative path.
-if docker run --name "$E2E_CTR" --network "$NET" -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" \
+if blocked e2e "End-to-end suite" container; then
+  :
+elif docker run --name "$E2E_CTR" --network "$NET" -v "$PWD":/src:ro -v "$NAME-npm:/npm-cache" \
      -e npm_config_cache=/npm-cache -e E2E_BASE_URL="http://$APP:8080" -e CI="${CI:-}" \
      -e GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" -e GITHUB_WORKSPACE=/w \
      "$PLAYWRIGHT_IMAGE" bash -c '
@@ -542,6 +732,9 @@ else
 fi
 
 banner "Mutation canary: do the tests catch a planted bug?"
+# Against a suite that already fails, any failure count would score as a
+# caught bug, so the canary needs the server tests green.
+if ! blocked canary "Mutation canary" server; then
 BACKUP="$(mktemp)"
 cp server/Api/Program.cs "$BACKUP"
 restore_canary() { cp "$BACKUP" server/Api/Program.cs; rm -f "$BACKUP"; }
@@ -570,6 +763,7 @@ else
   CHECKS_RUN=$((CHECKS_RUN + 1)); CHECKS_SKIPPED=$((CHECKS_SKIPPED + 1))
   summary_row "skipped"
   printf '%s[SKIP]%s Mutation canary (could not plant the mutation)\n' "$YELLOW" "$RESET"
+fi
 fi
 
 # The same tally as the terminal output, rendered as markdown on the CI run
@@ -603,5 +797,9 @@ if [ "$CHECKS_FAILED" -eq 0 ]; then
 else
   printf '%s%sFAILURES:%s\n' "$BOLD" "$RED" "$RESET"
   printf '%b' "$FAILED_NAMES"
+  if [ -n "$NOT_RUN" ]; then
+    printf '%sNOT RUN, because a check they need failed:%s\n' "$YELLOW" "$RESET"
+    printf '%b' "$NOT_RUN"
+  fi
   exit 1
 fi
