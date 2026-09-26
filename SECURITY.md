@@ -48,8 +48,10 @@ Projects generated from this template ship with:
 * GitHub Actions pinned to full commit SHAs and container base images to
   digests, both kept current by Dependabot (actions, docker, docker-compose,
   nuget and both npm ecosystems, patch/minor bumps grouped per ecosystem),
-  with the monthly `dotnet-major-upgrade` workflow covering the cross-major
-  .NET jump Dependabot cannot make, and the verify suite's held-majors check
+  with the monthly `dotnet-major-upgrade` workflow covering the jump to the
+  next LTS .NET major that Dependabot cannot make, ignore ranges holding back
+  every .NET and Node major that is not LTS (`scripts/check-lts-majors.sh`),
+  and the verify suite's held-majors check
   covering the npm major Dependabot cannot offer because it does not install
   and the NuGet major it cannot offer because no referencing project can
   consume it (accepted cases, with reasons, in [.held-majors](.held-majors)).
