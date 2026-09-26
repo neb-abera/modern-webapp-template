@@ -13,8 +13,8 @@
 #      providers, whatever the project uses
 #
 # The sites are found by what they contain, not by a path or a package list,
-# so one byte-identical file serves modern-webapp-template and every
-# repository ported from it. A hand list of package prefixes once missed
+# so one byte-identical file serves the template and every repository
+# ported from it. A hand list of package prefixes once missed
 # Microsoft.Extensions.ApiDescription.Server, which versions with the
 # framework and would have stayed a major behind.
 #
