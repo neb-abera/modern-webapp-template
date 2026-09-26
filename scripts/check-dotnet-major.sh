@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# check-dotnet-major.sh — detect a newer LTS .NET major and rewrite every
+# check-dotnet-major.sh — detect a newer GA .NET major and rewrite every
 # version site that must move in lockstep with it:
 #
 #   1. <TargetFramework> in every .csproj and .props file that declares one
@@ -32,21 +32,21 @@
 #
 # Exits 0 whether or not changes were made; non-zero only on failure.
 #
-# Only an LTS major is taken: the releases index marks each channel
-# "release-type" lts or sts, and an STS major (the odd ones) gets 18 months
-# of support. .github/dependabot.yml holds the STS majors back in the same
-# way, checked by scripts/check-lts-majors.sh.
+# The newest GA major is taken, LTS or STS: the releases index marks each
+# channel's support phase, and active or maintenance is GA. A preview or a
+# go-live release candidate is skipped. scripts/check-newest-majors.sh fails
+# when the repository is 45 days behind it.
 #
 # --self-test is the upgrade, rehearsed. Every site above is copied into a
 # temp tree with this script beside it, and two packages are planted in each
 # Directory.Packages.props: one versioned with the framework and one not.
 # curl and docker are replaced on PATH by stubs that answer from fixtures (a
-# releases index with an LTS major two ahead and a newer STS major, a
+# releases index with an STS major two ahead and a newer preview, a
 # registry that knows the new tags, a NuGet feed with a preview and a stable
 # release of the new major). The copy is run and every lockstep site must
-# have moved to the LTS major, exactly, with the other package untouched.
-# Run again with an index whose only newer major is STS it must change
-# nothing, with a registry whose runtime-image suffix changed it must find
+# have moved to the STS major, exactly, with the other package untouched.
+# Run again with an index whose only newer major is a release candidate it
+# must change nothing, with a registry whose runtime-image suffix changed it must find
 # the new tag, and with an index it cannot read it must fail saying so. Runs
 # unattended once a month, so this is the only time anyone watches it work:
 # CI runs it on every pull request.
@@ -140,13 +140,14 @@ self_test() {
 
   # Fixtures the stubs answer from.
   mkdir -p "$dir/fixture" "$dir/bin"
-  # The newest active channel is an STS major three ahead: the LTS one
-  # between must be the one taken. A preview LTS further out is skipped.
-  printf '{"releases-index":[{"channel-version":"%s","release-type":"lts","support-phase":"preview"},{"channel-version":"%s","release-type":"sts","support-phase":"active"},{"channel-version":"%s","release-type":"lts","support-phase":"active"},{"channel-version":"%s","release-type":"sts","support-phase":"maintenance"}]}\n' \
+  # The newest GA channel is an STS major two ahead, past an LTS one in
+  # maintenance: the STS one must be taken. A preview and a go-live release
+  # candidate further out are skipped.
+  printf '{"releases-index":[{"channel-version":"%s","release-type":"lts","support-phase":"preview"},{"channel-version":"%s","release-type":"sts","support-phase":"go-live"},{"channel-version":"%s","release-type":"sts","support-phase":"active"},{"channel-version":"%s","release-type":"lts","support-phase":"maintenance"}]}\n' \
     "$((major + 4)).0" "$((major + 3)).0" "$next" "$sts" > "$dir/fixture/index-next.json"
-  printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"active"},{"channel-version":"%s","release-type":"lts","support-phase":"active"}]}\n' \
+  printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"go-live"},{"channel-version":"%s","release-type":"lts","support-phase":"active"}]}\n' \
     "$sts" "$current" > "$dir/fixture/index-current.json"
-  printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"active"}]}\n' "$sts" > "$dir/fixture/index-empty.json"
+  printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"preview"}]}\n' "$sts" > "$dir/fixture/index-empty.json"
   # A preview of the new major that must be skipped and a stable one that must be taken.
   printf '{"versions":["%s.0","%s.0-preview.1","%s.3"]}\n' "$current" "$next" "$next" > "$dir/fixture/nuget.json"
 
@@ -215,7 +216,7 @@ STUB
   }
 
   run upgrade index-next.json "$next-$suffix"
-  check "the LTS major ahead of net$current is taken past an STS one (exit $code)" [ "$code" -eq 0 ]
+  check "the STS major ahead of net$current is taken past an LTS one (exit $code)" [ "$code" -eq 0 ]
   check "every lockstep site moved to net$next: each TargetFramework, every image tag with its digest, every package on the framework's major (stable only, Microsoft.Extensions included), the output and the summary, and a package with its own versioning untouched" \
     moved_everything upgrade "$next-$suffix"
 
@@ -226,17 +227,17 @@ STUB
   check "the summary says the suffix changed" grep -q "aspnet suffix changed: using $next-plucky-chiseled" <<< "$out"
 
   run current index-current.json "$next-$suffix"
-  check "an index whose only newer major is STS changes nothing (exit $code)" [ "$code" -eq 0 ]
-  check "it says so" grep -q "net$current is the latest LTS major" <<< "$out"
+  check "an index whose only newer major is a release candidate changes nothing (exit $code)" [ "$code" -eq 0 ]
+  check "it says so" grep -q "net$current is the latest GA major" <<< "$out"
   check "and every site is untouched" unchanged current
 
   run unreadable index-empty.json "$next-$suffix"
-  check "an index with no LTS release fails rather than upgrading to nothing (exit $code)" [ "$code" -ne 0 ]
-  check "it says why" grep -q "could not determine the latest LTS .NET version" <<< "$out"
+  check "an index with no GA release fails rather than upgrading to nothing (exit $code)" [ "$code" -ne 0 ]
+  check "it says why" grep -q "could not determine the latest GA .NET version" <<< "$out"
   check "and every site is untouched" unchanged unreadable
 
   if [ "$failed" -eq 0 ]; then
-    echo "self-test: a planted stale major was upgraded to the next LTS at every lockstep site past an STS major, a changed image suffix was found, an STS major was left alone, an index with no LTS failed"
+    echo "self-test: a planted stale major was upgraded to the next GA major (an STS one) at every lockstep site, a changed image suffix was found, a release candidate was left alone, an index with no GA release failed"
   fi
   return "$failed"
 }
@@ -255,21 +256,21 @@ current="$(current_framework)"
 
 latest="$(curl -fsSL "$RELEASES_INDEX_URL" | jq -r '
   ."releases-index"
-  | map(select(."release-type" == "lts" and (."support-phase" == "active" or ."support-phase" == "maintenance")))
+  | map(select(."support-phase" == "active" or ."support-phase" == "maintenance"))
   | max_by(."channel-version" | split(".") | map(tonumber))
   | ."channel-version"')"
-[ -n "$latest" ] && [ "$latest" != "null" ] || { echo "error: could not determine the latest LTS .NET version" >&2; exit 1; }
+[ -n "$latest" ] && [ "$latest" != "null" ] || { echo "error: could not determine the latest GA .NET version" >&2; exit 1; }
 
 cur_major="${current%%.*}"
 new_major="${latest%%.*}"
 
 if [ "$new_major" -le "$cur_major" ]; then
-  note "net${current} is the latest LTS major (index says ${latest}); nothing to do."
-  echo "Already on the latest LTS .NET major (net${current})." > "$SUMMARY_FILE"
+  note "net${current} is the latest GA major (index says ${latest}); nothing to do."
+  echo "Already on the latest GA .NET major (net${current})." > "$SUMMARY_FILE"
   exit 0
 fi
 
-note "LTS .NET ${latest} is out; currently on net${current}. Rewriting the lockstep sites."
+note ".NET ${latest} is GA; currently on net${current}. Rewriting the lockstep sites."
 
 projects="$(framework_files)"
 images="$(image_files)"
@@ -330,7 +331,7 @@ locks="$(source_files -name packages.lock.json)"
 bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
 
 {
-  echo "Moves the repo from **net${current}** to **net${latest}**, the latest LTS .NET major."
+  echo "Moves the repo from **net${current}** to **net${latest}**, the latest GA .NET major."
   echo
   echo "Every lockstep site moves together."
   echo
