@@ -29,7 +29,7 @@ permissions:
 jobs:
   verify:
     name: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The full suite (build, tests, image, e2e) normally finishes well inside
     # this; a hung container should not hold the runner for six hours.
     timeout-minutes: 30
@@ -95,7 +95,7 @@ jobs:
   dependency-review:
     name: dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: harden runner
@@ -144,7 +144,7 @@ jobs:
   attribution:
     name: attribution (no AI credit in commits)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: harden runner
@@ -173,7 +173,7 @@ jobs:
   # the one place their version is written, and `make lint` runs them there.
   lint:
     name: lint (actionlint + shellcheck)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: harden runner
@@ -214,7 +214,7 @@ jobs:
   # end-to-end tests.
   generate:
     name: generate (renamed copy builds and passes its tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: harden runner

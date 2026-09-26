@@ -119,7 +119,7 @@ build_and_test() (
   cd "$tree"
   sdk="$(sed -n 's|^FROM \(mcr\.microsoft\.com/dotnet/sdk:[^ ]*\) AS server-build$|\1|p' Dockerfile)"
   node="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-base$|\1|p' Dockerfile)"
-  pw="mcr.microsoft.com/playwright:v$(sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)-noble"
+  pw="mcr.microsoft.com/playwright:v$(sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)-resolute"
   if [ -z "$sdk" ] || [ -z "$node" ]; then echo "error: could not derive the toolchain images" >&2; exit 1; fi
   # shellcheck disable=SC2064 # expand now: the names are fixed
   trap "docker rm -f '$name-app' > /dev/null 2>&1; docker network rm '$name-net' > /dev/null 2>&1; docker image rm '$name:latest' > /dev/null 2>&1" EXIT
