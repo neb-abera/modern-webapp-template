@@ -17,7 +17,11 @@ rules if you adapt it to another host.
    without a new commit.
 
 2. **One deploy at a time, never cancelled mid-flight**
-   (`concurrency: deploy-production, cancel-in-progress: false`).
+   (`concurrency: deploy-production, cancel-in-progress: false`). The group
+   holds one pending run, and a newer run replaces it. CI runs once per
+   commit and two runs can finish in either order. So the `target` job
+   deploys the tip of main once CI has passed on it, whichever commit
+   triggered the run.
 
 3. **Secretless via OIDC.** `azure/login` exchanges the workflow's OIDC token
    for credentials. No client secret exists anywhere. When creating the

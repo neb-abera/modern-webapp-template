@@ -440,6 +440,16 @@ else
   fail "Attribution (a commit carries an AI credit, or a broken self-test)"
 fi
 
+banner "Concurrency: no workflow loses a run on the default branch"
+if ./scripts/check-concurrency.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-concurrency.sh >> "$LOG" 2>&1; then
+  cat "$LOG"
+  pass "Every run outside a pull request has its own group or a fixed one that never cancels"
+else
+  cat "$LOG"
+  fail "Concurrency (a workflow can cancel or replace a run outside a pull request, or a broken self-test)"
+fi
+
 banner "Server: build + unit tests (warnings as errors) + coverage"
 if server_tests coverage 2>&1 | tee "$LOG"; then
   count_tests "$(server_passed)" "$(server_failed)"
