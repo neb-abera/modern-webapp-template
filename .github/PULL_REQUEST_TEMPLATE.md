@@ -9,7 +9,8 @@
 ## How Has This Been Tested?
 <!--- A test that fails without the change comes first (TDD). List the -->
 <!--- commands you ran and what each showed, and the environment you ran -->
-<!--- them in. `./scripts/verify.sh` is the local merge gate. -->
+<!--- them in. The local merge gate is `./scripts/verify.sh`, or -->
+<!--- `make check` in a repository without one. -->
 
 ## Screenshots (if appropriate):
 
@@ -34,4 +35,4 @@
 - [ ] I have updated the documentation accordingly.
 - [ ] I have read the **CONTRIBUTING** document.
 - [ ] I have added tests to cover my changes.
-- [ ] All new and existing tests passed (`./scripts/verify.sh` is green).
+- [ ] All new and existing tests passed, and the local merge gate is green.

@@ -197,12 +197,12 @@ jobs:
       - name: check-dotnet-major.sh self-test (the upgrade tool proves it does the job)
         run: ./scripts/check-dotnet-major.sh --self-test
 
-      # Every Dependabot PR auto-merges, majors included, so the ignore
-      # ranges are all that keeps an STS .NET major or a Node major before
-      # its LTS date out. This reads nodejs.org/dist/index.json: exit 2 is an
-      # outage, not a finding.
-      - name: check-lts-majors.sh (only LTS majors of .NET and Node are offered)
-        run: ./scripts/check-lts-majors.sh --self-test && ./scripts/check-lts-majors.sh
+      # The newest GA major of .NET and Node, LTS or not. Fails on a
+      # Dependabot range holding a major back, and on a site 45 days behind
+      # the newest GA major. Reads the .NET releases index and
+      # nodejs.org/dist/index.json: exit 2 is an outage, not a finding.
+      - name: check-newest-majors.sh (.NET and Node on their newest GA majors)
+        run: ./scripts/check-newest-majors.sh --self-test && ./scripts/check-newest-majors.sh
 
   # setup.sh runs once per generated repository, where nobody watches it.
   # This renames a copy of the tree the way setup.sh does, fails on any file
