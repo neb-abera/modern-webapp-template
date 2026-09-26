@@ -1,0 +1,8 @@
+# actionlint configuration.
+#
+# ubuntu-26.04 is a real GitHub-hosted runner label (public preview,
+# actions/runner-images#14226); actionlint's built-in label list lags new
+# images, so declare it here to keep the lint honest rather than silenced.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

@@ -96,23 +96,33 @@ current_framework() {
   fi
   printf '%s\n' "$versions"
 }
-# aspnet_suffix: the OS suffix of the aspnet image tag (10.0-noble-chiseled
-# gives noble-chiseled), from the first Dockerfile that names one.
+# aspnet_suffix: the OS suffix of the aspnet image tag (10.0-resolute-chiseled
+# gives resolute-chiseled), from the first Dockerfile that names one.
 aspnet_suffix() {
   local f
   for f in $(image_files); do
     sed -n 's|^FROM mcr\.microsoft\.com/dotnet/aspnet:[0-9.]*-\([a-z-]*\)@.*|\1|p' "$f"
   done | head -1
 }
+# sdk_suffix: the OS suffix of the sdk image tag (10.0-resolute gives
+# resolute), empty when the sdk tag is the bare channel version.
+sdk_suffix() {
+  local f
+  for f in $(image_files); do
+    sed -n 's|^FROM mcr\.microsoft\.com/dotnet/sdk:[0-9.]*-\([a-z-]*\)@.*|\1|p' "$f"
+  done | head -1
+}
 
 self_test() {
-  local dir current major next sts suffix sdk_digest aspnet_digest failed=0 sites f
+  local dir current major next sts suffix sdk_tag_suffix sdk_digest aspnet_digest failed=0 sites f
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064 # expand now: the directory name is fixed
   trap "rm -rf '$dir'" EXIT
 
   current="$(current_framework)" || { echo "self-test FAILED: could not read the TargetFramework" >&2; return 1; }
   suffix="$(aspnet_suffix)"
+  sdk_tag_suffix="$(sdk_suffix)"
+  sdk_tag_suffix="${sdk_tag_suffix:+-$sdk_tag_suffix}"
   sites="$(framework_files; image_files; package_files)"
   if [ -z "$suffix" ] || [ -z "$(package_files)" ]; then
     echo "self-test FAILED: found no aspnet image with an OS suffix, or no Directory.Packages.props" >&2
@@ -167,7 +177,7 @@ STUB
   cat > "$dir/bin/docker" <<STUB
 #!/usr/bin/env bash
 case "\$4" in
-  mcr.microsoft.com/dotnet/sdk:$next) echo "$sdk_digest" ;;
+  mcr.microsoft.com/dotnet/sdk:$next$sdk_tag_suffix) echo "$sdk_digest" ;;
   mcr.microsoft.com/dotnet/aspnet:\$STUB_ASPNET_TAG) echo "$aspnet_digest" ;;
   *) echo "stub docker: no such image \$4" >&2; exit 1 ;;
 esac
@@ -193,10 +203,10 @@ STUB
     done
     for f in $(cd "$dir/planted" && image_files); do
       ! grep -Eq "dotnet/(sdk|aspnet):${current}[-@]" "$tree/$f" || return 1
-      ! grep -E '^FROM mcr\.microsoft\.com/dotnet/sdk:' "$tree/$f" | grep -vq "^FROM mcr.microsoft.com/dotnet/sdk:$next@$sdk_digest " || return 1
+      ! grep -E '^FROM mcr\.microsoft\.com/dotnet/sdk:' "$tree/$f" | grep -vq "^FROM mcr.microsoft.com/dotnet/sdk:$next$sdk_tag_suffix@$sdk_digest " || return 1
       ! grep -E '^FROM mcr\.microsoft\.com/dotnet/aspnet:' "$tree/$f" | grep -vq "^FROM mcr.microsoft.com/dotnet/aspnet:$tag@$aspnet_digest " || return 1
     done
-    grep -rq "^FROM mcr.microsoft.com/dotnet/sdk:$next@$sdk_digest " "$tree" || return 1
+    grep -rq "^FROM mcr.microsoft.com/dotnet/sdk:$next$sdk_tag_suffix@$sdk_digest " "$tree" || return 1
     grep -rq "^FROM mcr.microsoft.com/dotnet/aspnet:$tag@$aspnet_digest " "$tree" || return 1
     for f in $(cd "$dir/planted" && package_files); do
       # Every package on the old major is on the new one, the planted one
@@ -278,11 +288,13 @@ packages="$(package_files)"
 
 digest_of() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}'; }
 
-# The sdk tag is just the channel version; the aspnet tag carries an OS
-# suffix (e.g. 10.0-noble-chiseled) that can change between majors, so
+# The sdk tag is the channel version with the OS suffix the Dockerfile
+# already uses, if any (10.0-resolute). The aspnet tag carries an OS
+# suffix (e.g. 10.0-resolute-chiseled) that can change between majors, so
 # discover the new major's chiseled tag from the registry rather than
 # assuming the suffix survives.
-sdk_digest="$(digest_of "mcr.microsoft.com/dotnet/sdk:${latest}")"
+sdk_tag="${latest}$(sdk_suffix | sed 's/^./-&/')"
+sdk_digest="$(digest_of "mcr.microsoft.com/dotnet/sdk:${sdk_tag}")"
 
 aspnet_tag="${latest}-$(aspnet_suffix)"
 if ! docker buildx imagetools inspect "mcr.microsoft.com/dotnet/aspnet:${aspnet_tag}" >/dev/null 2>&1; then
@@ -297,7 +309,7 @@ for f in $projects; do
   replace "$f" "s|<TargetFramework>net\Q${current}\E<|<TargetFramework>net${latest}<|"
 done
 for f in $images; do
-  replace "$f" "s|dotnet/sdk:\Q${current}\E\@sha256:[0-9a-f]+|dotnet/sdk:${latest}\@${sdk_digest}|g"
+  replace "$f" "s|dotnet/sdk:\Q${current}\E(-[a-z-]+)?\@sha256:[0-9a-f]+|dotnet/sdk:${sdk_tag}\@${sdk_digest}|g"
   replace "$f" "s|dotnet/aspnet:\Q${current}\E-[a-z-]+\@sha256:[0-9a-f]+|dotnet/aspnet:${aspnet_tag}\@${aspnet_digest}|g"
   if grep -Eq "dotnet/(sdk|aspnet):${current//./\\.}([-@ ]|$)" "$f"; then
     echo "error: $f still names a .NET ${current} image that is not in tag@digest form; move it by hand" >&2
@@ -340,7 +352,7 @@ bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
   # shellcheck disable=SC2086 # one path per word
   bullets $projects
   echo
-  echo "\`dotnet/sdk:${latest}\` and \`dotnet/aspnet:${aspnet_tag}\`, digest-pinned:"
+  echo "\`dotnet/sdk:${sdk_tag}\` and \`dotnet/aspnet:${aspnet_tag}\`, digest-pinned:"
   echo
   # shellcheck disable=SC2086
   bullets $images
