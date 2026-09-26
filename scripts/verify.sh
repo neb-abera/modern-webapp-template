@@ -2,47 +2,53 @@
 #
 # verify.sh — run the project's full verification suite, with a running
 # pass/fail count and a final summary. Everything runs in containers, so the
-# host needs only Docker and git. This mirrors what CI gates before a merge:
+# host needs only Docker and git. This mirrors what CI gates before a merge.
+# The checks, in the order they run:
 #
-#   1. required checks: branch protection and the PR-gating workflows agree
-#      (the checker first proves a renamed context and a lost pull_request
-#      trigger are both caught)
-#   2. template parity: every file .template-parity lists is byte-identical
-#      to the template's default branch — trivially so inside the template,
-#      which is the source (the checker first proves a drifted file and a
-#      missing file are both caught)
-#   3. prose: every tracked Markdown file passes the writing rules in
-#      .vale/styles/Abera (the checker first proves every rule fires on a
-#      fixture and that clean prose passes)
-#   4. server: build + unit tests (warnings as errors, locked-mode restore)
-#      + line coverage at or above SERVER_COVERAGE_MIN
-#   5. client: typecheck + lint (Biome) + unit tests + coverage thresholds
-#      (vitest.config's coverage.thresholds fail the run on their own)
-#   6. OpenAPI contract: the committed spec (server/Api/openapi.json) and the
-#      generated client types (client/src/api-types.d.ts) match the code
-#   7. held majors: no npm dependency's next major is uninstallable and no
-#      NuGet dependency's next major ships only a framework the project
-#      cannot consume, the two cases Dependabot cannot open a pull request
-#      for (scripts/check-held-majors.sh)
-#   8. response DTOs: no response schema in that spec has a field named like
-#      personal or secret data, unless allowlisted with a reason (the checker
-#      plants a leaking spec and must catch it)
-#   9. database runtime role: scripts/db/runtime-role.sql, applied to a real
-#      PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
-#      checker over-privileges a second role and must catch it)
-#  10. the production image builds
-#  11. byte budget: that image's client build, in gzip bytes, is within
-#      client/byte-budget.json (the checker proves its boundary: exactly at
-#      the limit passes; one byte over, a missing artifact and a missing
-#      budget all fail)
-#  12. smoke: the running container serves client, API, health, security
-#      headers, refuses a Host it was not configured for (but answers
-#      /healthz on it), will not start with no hosts configured, runs as a
-#      non-root user, its own `--healthcheck` probe (the Dockerfile's
-#      HEALTHCHECK) says healthy against it and unhealthy against a dead
-#      port — and `--migrate` applies and exits instead of serving
-#  13. end-to-end: Playwright against the production container
-#  14. mutation canary: a planted server bug must fail the tests
+#   - required checks: .github/required-checks and the pull-request jobs
+#     agree (the checker first proves a renamed check, a lost pull_request
+#     trigger and an unlisted job are all caught)
+#   - template parity: every file .template-parity lists is byte-identical
+#     to the template's default branch — trivially so inside the template,
+#     which is the source (the checker first proves a drifted file and a
+#     missing file are both caught)
+#   - prose: every tracked Markdown file passes the writing rules in
+#     .vale/styles/Abera (the checker first proves every rule fires on a
+#     fixture and that clean prose passes)
+#   - attribution: no commit on the branch credits an AI (the checker first
+#     proves a planted trailer and a generated-with line are refused)
+#   - server: build + unit tests (warnings as errors, locked-mode restore)
+#     + line coverage at or above SERVER_COVERAGE_MIN
+#   - client: typecheck + lint (Biome) + unit tests + coverage thresholds
+#     (vitest.config's coverage.thresholds fail the run on their own)
+#   - OpenAPI contract: the committed spec (server/Api/openapi.json) and the
+#     generated client types (client/src/api-types.d.ts) match the code
+#   - held majors: no npm dependency's next major is uninstallable and no
+#     NuGet dependency's next major ships only a framework the project
+#     cannot consume, the two cases Dependabot cannot open a pull request
+#     for (scripts/check-held-majors.sh)
+#   - response DTOs: no response schema in that spec has a field named like
+#     personal or secret data, unless allowlisted with a reason (the checker
+#     plants a leaking spec and must catch it)
+#   - database runtime role: scripts/db/runtime-role.sql, applied to a real
+#     PostgreSQL, allows rows and refuses CREATE/ALTER/DROP/TRUNCATE (the
+#     checker over-privileges a second role and must catch it)
+#   - the production image builds
+#   - byte budget: that image's client build, in gzip bytes, is within
+#     client/byte-budget.json (the checker proves its boundary: exactly at
+#     the limit passes; one byte over, a missing artifact and a missing
+#     budget all fail)
+#   - smoke: the running container serves client, API, health, security
+#     headers, refuses a Host it was not configured for (but answers
+#     /healthz on it), will not start with no hosts configured, runs as a
+#     non-root user, its own `--healthcheck` probe (the Dockerfile's
+#     HEALTHCHECK) says healthy against it and unhealthy against a dead
+#     port — and `--migrate` applies and exits instead of serving
+#   - load harness: k6 runs load/smoke.js against that container, one user
+#     and correctness thresholds only, never timing (a planted run at a
+#     dead port must end with k6's crossed-thresholds exit code, 99)
+#   - end-to-end: Playwright against the production container
+#   - mutation canary: a planted server bug must fail the tests
 #
 # Exit code 0 means everything passed.
 
@@ -61,8 +67,10 @@ SDK_IMAGE="$(sed -n 's|^FROM \(mcr\.microsoft\.com/dotnet/sdk:[^ ]*\) AS server-
 NODE_IMAGE="$(sed -n 's|^FROM \(node:[^ ]*\) AS node-base$|\1|p' Dockerfile)"
 PLAYWRIGHT_VERSION="$(sed -n 's|.*"@playwright/test": "\([^"]*\)".*|\1|p' e2e/package.json)"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble"
-if [ -z "$SDK_IMAGE" ] || [ -z "$NODE_IMAGE" ] || [ -z "$PLAYWRIGHT_VERSION" ]; then
-  echo "error: could not derive toolchain images from Dockerfile / e2e/package.json" >&2
+# The k6 image is the one `make load` runs, from compose.yaml.
+K6_IMAGE="$(sed -n 's|^ *image: \(grafana/k6:[^ ]*\)$|\1|p' compose.yaml)"
+if [ -z "$SDK_IMAGE" ] || [ -z "$NODE_IMAGE" ] || [ -z "$PLAYWRIGHT_VERSION" ] || [ -z "$K6_IMAGE" ]; then
+  echo "error: could not derive toolchain images from Dockerfile / e2e/package.json / compose.yaml" >&2
   exit 1
 fi
 SMOKE_PORT="${SMOKE_PORT:-18080}"
@@ -73,7 +81,8 @@ else
   RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
 fi
 
-CHECKS_TOTAL=14
+# Counted from the banners below, so adding a check cannot leave it stale.
+CHECKS_TOTAL="$(grep -c '^banner "' scripts/verify.sh)"
 CHECKS_RUN=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
@@ -197,13 +206,13 @@ server_tests() {
 server_passed() { grep -Eo 'succeeded: [0-9]+|Passed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 server_failed() { grep -Eo 'failed: [0-9]+|Failed: [0-9]+' "$LOG" | tail -1 | grep -Eo '[0-9]+'; }
 
-banner "Required checks: setup.sh's contexts match the PR-gating workflows"
+banner "Required checks: .github/required-checks matches the pull-request jobs"
 # The self-test runs first, every time, here and before every other checker
 # that has one: a check that has lost the ability to fail is caught rather
 # than trusted.
 if ./scripts/check-required-contexts.sh --self-test 2>&1 | tee "$LOG" \
    && ./scripts/check-required-contexts.sh 2>&1 | tee -a "$LOG"; then
-  pass "Branch-protection contexts and PR-gating job names agree (and the checker caught a renamed context)"
+  pass "Required checks and pull-request job names agree (and the checker caught a renamed check)"
 else
   fail "Required-checks drift guard (a context/job mismatch, or the checker's self-test)"
 fi
@@ -219,17 +228,41 @@ else
   fail "Template parity (a shared file drifted from the template, or the checker's self-test)"
 fi
 
-banner "Prose: every tracked Markdown file passes the writing rules"
+banner "Prose: the Markdown and the built pages pass the writing rules"
 # The self-test runs first, every time: one fixture carries one violation per
 # rule and every rule must fire on it, another is clean and must pass, so a
 # rule that has stopped matching is caught here rather than trusted.
+#
+# Then the pages, through the `pageprose` stage: the prerendered HTML the
+# image ships, checked as a reader is given it rather than as source. A
+# README lints and the page beside it does not is how a line of copy that
+# breaks every rule stays live.
 if ./scripts/check-prose.sh --self-test > "$LOG" 2>&1 \
-   && ./scripts/check-prose.sh >> "$LOG" 2>&1; then
+   && ./scripts/check-prose.sh >> "$LOG" 2>&1 \
+   && docker build --target pageprose -t "$NAME-pageprose" . >> "$LOG" 2>&1; then
   grep -E '^self-test' "$LOG" || true
-  pass "Prose passes .vale/styles/Abera"
+  pass "Prose passes .vale/styles/Abera, in the Markdown and on the pages"
 else
   tail -40 "$LOG"
-  fail "Prose (a rule violation in a Markdown file, or a broken self-test)"
+  fail "Prose (a rule violation in a Markdown file or a built page, or a broken self-test)"
+fi
+
+banner "Attribution: no commit on this branch credits an AI"
+# The self-test first, as everywhere else: it plants a trailer and a
+# generated-with line in throwaway repositories and requires both to be
+# refused, then requires a clean range to pass.
+#
+# Then the branch itself. The commit-msg hook and the Claude PreToolUse gate
+# both run on the machine making the commit, so neither sees a commit made
+# anywhere they are not installed. This is the one that runs where the merge
+# happens.
+if ./scripts/check-attribution.sh --self-test > "$LOG" 2>&1 \
+   && ./scripts/check-attribution.sh >> "$LOG" 2>&1; then
+  grep -E '^check-attribution|^attribution:' "$LOG" || true
+  pass "No commit on this branch credits an AI"
+else
+  tail -30 "$LOG"
+  fail "Attribution (a commit carries an AI credit, or a broken self-test)"
 fi
 
 banner "Server: build + unit tests (warnings as errors) + coverage"
@@ -290,7 +323,10 @@ if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/ro
     cp -r /src /w
     cd /w/server
     dotnet build Api -c Release -p:RestoreLockedMode=true
-    cp Api/openapi.json /out/openapi.json
+    # install rather than cp: the file inherits the mode it had in the
+    # checkout, and a tree checked out under a umask of 007 hands back a
+    # root-owned 640 file that the diff below cannot read.
+    install -m 644 Api/openapi.json /out/openapi.json
   ' > "$LOG" 2>&1 \
    && docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-npm:/npm-cache" \
         -e npm_config_cache=/npm-cache "$NODE_IMAGE" sh -c '
@@ -299,6 +335,7 @@ if docker run --rm -v "$PWD":/src:ro -v "$CONTRACT_OUT":/out -v "$NAME-nuget:/ro
     cd /w
     npm ci --no-audit --no-fund
     node_modules/.bin/openapi-typescript /out/openapi.json --output /out/api-types.d.ts
+    chmod 644 /out/api-types.d.ts
   ' >> "$LOG" 2>&1 \
    && diff -u server/Api/openapi.json "$CONTRACT_OUT/openapi.json" \
    && diff -u client/src/api-types.d.ts "$CONTRACT_OUT/api-types.d.ts"; then
@@ -443,6 +480,29 @@ else
   fail "Production container smoke test"
 fi
 
+banner "Load harness: k6 runs load/smoke.js against the production container"
+# Build and run, never timing: LOAD_PROFILE=smoke is one user, three passes,
+# and thresholds on checks and failed requests only. The p95 bound in
+# load/smoke.js belongs to `make load`. The planted run first: pointed at a
+# port nothing listens on, k6 must exit 99, its code for crossed thresholds.
+# Any other code is a harness that did not run, and a harness that cannot
+# fail proves nothing when it passes. --user because the mount is read as
+# the checkout's owner (a umask of 007 leaves the image's own user out).
+k6_smoke() { # k6_smoke <base url>
+  docker run --rm --network "$NET" --user "$(id -u):$(id -g)" -v "$PWD/load":/scripts:ro \
+    -e BASE_URL="$1" -e LOAD_PROFILE=smoke "$K6_IMAGE" run --quiet /scripts/smoke.js
+}
+k6_planted=0
+k6_smoke "http://$APP:9" > "$LOG" 2>&1 || k6_planted=$?
+if [ "$k6_planted" -ne 99 ]; then
+  tail -20 "$LOG"
+  fail "Load harness (the planted run at a dead port exited $k6_planted, not 99: the harness did not run)"
+elif k6_smoke "http://$APP:8080" 2>&1 | tee "$LOG"; then
+  pass "k6 ran load/smoke.js against the container with every check green (and a dead port crossed its thresholds)"
+else
+  fail "Load harness (a check or a request failed against the running container)"
+fi
+
 banner "End-to-end: Playwright against the production container"
 E2E_CTR="$NAME-verify-e2e"
 docker rm -f "$E2E_CTR" > /dev/null 2>&1
@@ -487,14 +547,23 @@ cp server/Api/Program.cs "$BACKUP"
 restore_canary() { cp "$BACKUP" server/Api/Program.cs; rm -f "$BACKUP"; }
 perl -pi -e 's/Hello from the API/Goodbye from the API/' server/Api/Program.cs
 if ! cmp -s server/Api/Program.cs "$BACKUP"; then
-  if server_tests > "$LOG" 2>&1; then
+  server_tests > "$LOG" 2>&1
+  # The exit code alone cannot tell a failing test from a build that never
+  # produced one, and both are non-zero. So read the reported failure count:
+  # a planted bug that does not compile measures nothing, and treating it as
+  # "the tests caught it" is how this check used to pass on a broken tree.
+  caught=$(server_failed)
+  if [ -z "$caught" ]; then
+    restore_canary
+    tail -30 "$LOG"
+    fail "Mutation canary (the test run reported no results at all, so the planted bug was never measured; the build is broken)"
+  elif [ "$caught" -eq 0 ]; then
     restore_canary
     fail "Mutation canary (tests did NOT catch the planted bug!)"
   else
-    caught=$(server_failed)
     restore_canary
-    echo "planted a wrong greeting; ${caught:-some} tests failed as they should, then restored"
-    pass "Mutation canary: tests caught the planted bug (${caught:-?} failures)"
+    echo "planted a wrong greeting; $caught tests failed as they should, then restored"
+    pass "Mutation canary: tests caught the planted bug ($caught failures)"
   fi
 else
   restore_canary

@@ -26,3 +26,7 @@ scripts/check-prose.sh
 .vale/styles/Abera/Preamble.yml
 .vale/styles/Abera/Rhetorical.yml
 .vale/styles/Abera/Semicolon.yml
+scripts/check-attribution.sh
+scripts/check-required-contexts.sh
+LICENSE
+.github/PULL_REQUEST_TEMPLATE.md

@@ -10,12 +10,14 @@ template, in order.
 Renames the project after your repository and enables the GitHub settings
 templates cannot carry over: secret scanning, push protection, private
 vulnerability reporting, Dependabot alerts + security updates, and branch
-protection requiring the CI checks. Needs the `gh` CLI authenticated as an
-admin of the repo.
+protection requiring the checks in `.github/required-checks`. It also turns
+on auto-merge and the Update branch button, which strict required checks
+need. Needs the `gh` CLI authenticated as an admin of the repo.
 
-## 2. Dependency automerge: one setting, one token
+## 2. Dependency automerge: one token
 
-- Enable **Settings → General → Allow auto-merge** on the repository.
+- `setup.sh` has turned on **Allow auto-merge** and **Always suggest updating
+  pull request branches**.
 - Create a fine-grained personal access token
   (github.com/settings/personal-access-tokens): repository access limited to
   this repo (add it to an existing fleet token if you have one), permissions
