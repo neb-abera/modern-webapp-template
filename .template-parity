@@ -8,7 +8,7 @@
 # Format: one path per line; the first line names the template.
 template: neb-abera/modern-webapp-template
 scripts/check-held-majors.sh
-scripts/check-lts-majors.sh
+scripts/check-newest-majors.sh
 scripts/check-dotnet-major.sh
 scripts/held-majors.mjs
 scripts/held-nuget-majors.cs
