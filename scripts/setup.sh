@@ -10,7 +10,8 @@
 # What it does:
 #   1. renames the app after your repository (page title, heading, the unit
 #      and e2e expectations of that heading, the README heading, badges and
-#      links, NOTICE, SECURITY.md advisory URL) and pushes the change
+#      links, NOTICE, SECURITY.md advisory URL), starts the version at
+#      0.1.0 and pushes the change
 #   2. enables the GitHub settings templates cannot carry over: secret
 #      scanning, push protection, private vulnerability reporting, Dependabot
 #      alerts and security updates, auto-merge, the Update branch button and
@@ -81,6 +82,8 @@ rename_files() {
   # NOTICE's first line names the work. The copyright line stays: it covers
   # the template's code the repository still carries.
   NEW_NAME="$repo" perl -pi -e '$_ = "$ENV{NEW_NAME}\n" if $. == 1' NOTICE
+  # A new project starts at 0.1.0, not at the template's own version.
+  perl -pi -e 's#<Version>[^<]*</Version>#<Version>0.1.0</Version>#' server/Directory.Build.props
 }
 
 # template_leftovers <dir>: every file under <dir> that still names the
@@ -181,6 +184,8 @@ self_test() {
   else fail_ "NOTICE does not name the generated project"; fi
   if grep -qx '# acme-portal' "$dir/generated/README.md"; then ok "the README heading is the project's name"
   else fail_ "the README heading is not '# acme-portal'"; fi
+  if "$dir/generated/scripts/check-version.sh" --tag v0.1.0 > /dev/null; then ok "the generated project starts at version 0.1.0"
+  else fail_ "the generated project does not start at version 0.1.0"; fi
 
   # 1a. Planted: a file the rename does not cover. It must be named.
   cp -R "$dir/generated" "$dir/leftover"

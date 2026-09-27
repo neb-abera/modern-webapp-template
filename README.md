@@ -110,8 +110,10 @@ every change, and CI runs the same script.
   `scripts/check-newest-majors.sh` in the lint job fails when Dependabot
   holds one back, and when a site is 45 days behind it.
 
-* **Releases from tags.** Pushing `v*` re-verifies, publishes the image to
-  GHCR and creates a GitHub Release.
+* **Releases from tags.** The version lives in
+  `server/Directory.Build.props` and nowhere else. Pushing `v*` checks the
+  tag against it, re-verifies, publishes the image to GHCR and creates a
+  GitHub Release.
 
 * **Generic by construction.** Docker names derive from the checkout
   directory and release names from the repository.
@@ -171,8 +173,12 @@ compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile
    or e2e).
 2. `make dev` and implement until the test passes.
 3. `make verify` before pushing. CI runs the identical suite.
-4. When a milestone works, tag it (`git tag v1.2.0 && git push origin
-   v1.2.0`) to publish an image and a release.
+4. When a milestone works, set `<Version>` in
+   `server/Directory.Build.props` in a pull request and merge it. Then tag
+   that commit (`git tag v1.2.0 && git push origin v1.2.0`) to publish an
+   image and a release. Raise PATCH for a fix and MINOR for anything added
+   or upgraded. Raise MAJOR only when a step that worked in the previous
+   release no longer does.
 
 ### Adding a database
 
