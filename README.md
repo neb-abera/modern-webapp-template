@@ -4,7 +4,7 @@
 
 # Modern Web App Template
 
-A starting point for web applications: .NET 10 minimal API, React 19,
+A starting point for web applications: .NET 11 minimal API, React 19,
 TypeScript, Vite 8. Everything runs in Docker. One verification suite gates
 every change, and CI runs the same script.
 
@@ -92,8 +92,8 @@ every change, and CI runs the same script.
   prerendered HTML the image ships, as a reader is given it. Check 3 of the
   suite.
 
-* **Toolchain.** .NET 10, React 19, Vite 8, Vitest 4, TypeScript 7,
-  Biome 2, Playwright, Node 26.
+* **Toolchain.** .NET 11 (release candidate 1), React 19, Vite 8, Vitest 5,
+  TypeScript 7, Biome 2, Playwright, Node 26.
 
 * **Kept current by Dependabot** on every ecosystem (both npm manifests,
   NuGet, Docker, compose, Actions), patch and minor grouped into one PR per
@@ -153,7 +153,7 @@ containers.
 ## Project layout
 
 ```
-server/           .NET 10 minimal API (Api/) and its xUnit v3 tests (Api.Tests/)
+server/           .NET 11 minimal API (Api/) and its xUnit v3 tests (Api.Tests/)
 client/           React 19 + TypeScript + Vite app, Vitest tests, Biome config
 e2e/              Playwright suite, run against the production container
 tools/api-types/  openapi-typescript and the TypeScript 5 it needs, in a manifest of their own

@@ -19,7 +19,7 @@ internal static class NoStoreResponses
     private static readonly PathString[] Paths = [HealthRoute.Path, "/api"];
 
     public static bool Applies(PathString path) =>
-        Array.Exists(Paths, prefix => path.StartsWithSegments(prefix));
+        Array.Exists(Paths, path.StartsWithSegments);
 
     public static IApplicationBuilder UseNoStoreResponses(this IApplicationBuilder app) =>
         app.Use((context, next) =>
