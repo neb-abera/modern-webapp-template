@@ -191,7 +191,7 @@ jobs:
       - name: actionlint (workflows, including embedded shell) and shellcheck (scripts)
         run: make lint
 
-      # The monthly upgrade tool (dotnet-major-upgrade.yml) runs unattended,
+      # The weekly upgrade tool (dotnet-major-upgrade.yml) runs unattended,
       # so this is the only run anyone watches: its self-test upgrades a
       # planted stale major in a temp copy of the tree with curl and docker
       # stubbed, and a regex that rotted is a red pull request here rather

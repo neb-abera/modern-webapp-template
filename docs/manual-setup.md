@@ -102,7 +102,7 @@ What stays manual, forever:
 
 ## 5. .NET major upgrades: close and reopen the PR
 
-The monthly `dotnet-major-upgrade` workflow opens its PR with the default
+The weekly `dotnet-major-upgrade` workflow opens its PR with the default
 token, and workflow-opened PRs do not start checks on their own. Close and
 reopen that PR once to trigger CI on it, then merge on green.
 
