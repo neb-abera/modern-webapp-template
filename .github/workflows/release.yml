@@ -32,6 +32,14 @@ jobs:
           # This job never pushes; don't persist the token.
           persist-credentials: false
 
+      # A release tag is the version server/Directory.Build.props declares
+      # (scripts/check-version.sh). A mismatch stops here, before anything
+      # is built or published.
+      - name: the tag matches the product version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./scripts/check-version.sh --tag "$TAG"
+
       - name: run the verification suite
         run: ./scripts/verify.sh
 
