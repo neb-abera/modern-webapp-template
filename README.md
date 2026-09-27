@@ -175,10 +175,11 @@ compose.yaml      `app` (production-like) plus a hot-reloading `dev` profile
 3. `make verify` before pushing. CI runs the identical suite.
 4. When a milestone works, set `<Version>` in
    `server/Directory.Build.props` in a pull request and merge it. Then tag
-   that commit (`git tag v1.2.0 && git push origin v1.2.0`) to publish an
+   that commit (`git tag v0.2.0 && git push origin v0.2.0`) to publish an
    image and a release. Raise PATCH for a fix and MINOR for anything added
    or upgraded. Raise MAJOR only when a step that worked in the previous
-   release no longer does.
+   release no longer does. The version stays below 1.0.0 until the
+   project is declared stable for others to build on.
 
 ### Adding a database
 
