@@ -33,3 +33,4 @@ scripts/check-concurrency.sh
 scripts/check-required-contexts.sh
 LICENSE
 .github/PULL_REQUEST_TEMPLATE.md
+scripts/check-version.sh
