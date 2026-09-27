@@ -53,9 +53,17 @@ jobs:
       - name: build production image
         run: docker build -t scan-target .
 
+      - name: read the scanner versions from the Dockerfile
+        id: pins
+        run: |
+          trivy=$(sed -nE 's/^FROM aquasec\/trivy:v?([^@]+)@.* AS trivy$/\1/p' Dockerfile)
+          if [ -z "$trivy" ]; then echo "no trivy FROM line in Dockerfile"; exit 1; fi
+          echo "trivy=v$trivy" >> "$GITHUB_OUTPUT"
+
       - name: scan for HIGH/CRITICAL CVEs
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
+          version: ${{ steps.pins.outputs.trivy }}
           image-ref: scan-target
           severity: HIGH,CRITICAL
           format: sarif

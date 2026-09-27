@@ -71,6 +71,12 @@ CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true &
 # script reads it from here rather than pinning a version of its own.
 FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c8857bc86b724a28e AS vale
 
+# The scanners CI runs, for their versions only: trivy-action and
+# sbom-action take a version input, and these FROM lines are what
+# Dependabot bumps. Nothing is built from them.
+FROM aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 AS trivy
+FROM anchore/syft:v1.52.0@sha256:500e2d872ac019436926e8322b4fc1f39441d94d21f6f4046c6ff29b30e8cb02 AS syft
+
 # Workflow and script linter, for `make lint` and the CI lint job. Never
 # built into anything, like the vale stage: the image carries actionlint and
 # the shellcheck it runs on embedded run: blocks, and one FROM line here is
