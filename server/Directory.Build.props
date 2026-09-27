@@ -4,6 +4,9 @@
          tags in the Dockerfile. Dependabot bumps those tags but never this
          property; scripts/check-dotnet-major.sh (run weekly by the
          dotnet-major-upgrade workflow) moves all the sites together. -->
+    <!-- The product version. scripts/check-version.sh holds a release tag
+         equal to it, and .versioning names this file as its home. -->
+    <Version>2.0.0</Version>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
