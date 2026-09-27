@@ -3,8 +3,6 @@ using System.Threading.RateLimiting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Net.Http.Headers;
 

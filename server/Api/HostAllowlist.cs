@@ -33,7 +33,7 @@ internal sealed class HostAllowlist
     public const string Setting = "HostAllowlist:Hosts";
     public const string EnvironmentVariable = "HostAllowlist__Hosts";
 
-    private readonly HashSet<string> exact = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> exact = [with(StringComparer.OrdinalIgnoreCase)];
     private readonly List<string> suffixes = [];
 
     public HostAllowlist(string? hosts)

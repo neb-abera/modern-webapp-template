@@ -21,12 +21,12 @@ RUN npm run build
 #
 # Server build
 #
-# The 10.0 tags here and on the runtime image must move in lockstep with
+# The 11.0 tags here and on the runtime image must move in lockstep with
 # <TargetFramework> in server/Directory.Build.props. Dependabot bumps these
 # tags but never the TargetFramework — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) makes the cross-major jump.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0-resolute@sha256:d818bb3014d94172e93820d985130135870bd1760f02588a61263a85c966860e AS server-build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:ab11199f8a0cded1d667111a0d4f0906567c3a17348a7181f9781d12cc5eb6f9 AS server-build
 WORKDIR /build/server
 COPY server/ ./
 # ReadyToRun precompiles IL for faster cold starts (Container Apps scale
@@ -39,7 +39,7 @@ RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true -
 # node-base above rather than a package repository, so the dev toolchain can
 # never drift from the version the client is built with.
 #
-FROM mcr.microsoft.com/dotnet/sdk:10.0-resolute@sha256:d818bb3014d94172e93820d985130135870bd1760f02588a61263a85c966860e AS dev
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:ab11199f8a0cded1d667111a0d4f0906567c3a17348a7181f9781d12cc5eb6f9 AS dev
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
@@ -69,7 +69,7 @@ CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true &
 # Prose linter, for scripts/check-prose.sh. Never built into anything: the
 # stage exists so the image is a FROM line Dependabot sees and bumps, and the
 # script reads it from here rather than pinning a version of its own.
-FROM jdkato/vale:v3.22.0@sha256:0ef74c2c8331a2cc8739ecc8b4f7cc6672e61524c3697e8c8857bc86b724a28e AS vale
+FROM jdkato/vale:v3.23.0@sha256:d87d6355dc8992f92ec39c4c862a388e56e30302a771fd4512c02660fb25cdf3 AS vale
 
 # The scanners CI runs, for their versions only: trivy-action and
 # sbom-action take a version input, and these FROM lines are what
@@ -106,7 +106,7 @@ RUN ! vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/fails.m
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-resolute-chiseled@sha256:99a0fe6f3e933a3d170aa38d8be4237125b72c644a9229889ee842628cbaf845 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-resolute-chiseled@sha256:ec752d908262db3ed7fe5cd7baad2dc97373c0bd390456a50bda8aaa866fc93d AS runtime
 WORKDIR /app
 # Owned by the user the app runs as. Without the --chown the mode travels
 # from the build context: a developer whose umask is 007 checks

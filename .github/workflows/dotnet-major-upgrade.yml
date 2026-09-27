@@ -1,14 +1,16 @@
-# Opens a PR moving the repo to a newly GA .NET major, LTS or STS.
+# Opens a PR moving the repo to a newly GA .NET major, LTS or STS, or
+# moving a release candidate taken ahead of GA to GA once it ships.
 # Dependabot keeps every dependency current within a major but never
 # crosses one, because
 # <TargetFramework> gates the images and every package versioned with the
 # framework; scripts/check-dotnet-major.sh makes that cross-major jump with
 # all the lockstep sites in one commit.
 #
-# Runs weekly, on Mondays, so a GA major is picked up within 7 days, and
-# does nothing when already current. PRs opened with the default workflow
-# token do not trigger CI. Close and reopen the PR (or push an empty commit)
-# to run the checks.
+# Runs weekly, on Mondays, so a GA major is picked up within 7 days. Does
+# nothing when already current, and nothing while the repository is on a
+# prerelease ahead of GA. PRs opened with the default workflow token do not
+# trigger CI. Close and reopen the PR (or push an empty commit) to run the
+# checks.
 name: dotnet-major-upgrade
 
 on:
@@ -56,7 +58,7 @@ jobs:
       - name: Prove the upgrade script still does the job
         run: scripts/check-dotnet-major.sh --self-test
 
-      - name: Check for a newer GA .NET major
+      - name: Check for a newer GA .NET major, or a GA release of a prerelease one
         id: check
         run: SUMMARY_FILE="$RUNNER_TEMP/dotnet-major-summary.md" scripts/check-dotnet-major.sh
 
@@ -68,6 +70,6 @@ jobs:
           # Commit via GitHub's API so the commit is signed by GitHub itself;
           # branches requiring Verified commits reject CLI-made bot commits.
           sign-commits: true
-          commit-message: "Upgrade to .NET ${{ steps.check.outputs.new-version }}"
-          title: "Upgrade to .NET ${{ steps.check.outputs.new-version }}"
+          commit-message: ${{ steps.check.outputs.title }}
+          title: ${{ steps.check.outputs.title }}
           body-path: ${{ runner.temp }}/dotnet-major-summary.md
