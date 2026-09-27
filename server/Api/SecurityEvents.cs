@@ -17,7 +17,6 @@
 // endpoint calls SignInRefused, the first webhook calls
 // WebhookSignatureRejected, the first form post wires AntiforgeryRejected.
 // docs/manual-setup.md says where.
-using Microsoft.AspNetCore.Routing;
 
 namespace Api;
 
