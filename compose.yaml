@@ -51,6 +51,11 @@ services:
     # nor write a tree left at rw-rw---- by a umask of 007 (Makefile says more).
     user: "${HOST_UID:-0}:${HOST_GID:-0}"
     command: dotnet watch --project Api --non-interactive
+    # An init process as PID 1, so dotnet is not. As PID 1 it inherits every
+    # orphaned build process dotnet watch leaves, and on .NET 11.0.0-rc.1 its
+    # child reaper fails fast on one it did not start ("Error while reaping
+    # child. errno = 10", seen in aberaTech #249).
+    init: true
     working_dir: /work/server
     environment:
       ASPNETCORE_ENVIRONMENT: Development
