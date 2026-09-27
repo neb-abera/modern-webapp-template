@@ -227,10 +227,21 @@ self_test() {
   dotnetix grace "$((dn + 1))" active sts "$recent"
   dotnetix preview "$((dn + 1))" go-live sts "$old"
 
-  awk '{ print } /^[ ]{4}ignore:/ && !done { print "      - dependency-name: node\n        versions:\n          - \">= 99, < 100\""; done = 1 }' \
-    .github/dependabot.yml > "$DIR/node-hold/.github/dependabot.yml"
-  awk '{ print } /^[ ]{4}ignore:/ && !done { print "      - dependency-name: \"Microsoft.AspNetCore.*\"\n        update-types:\n          - version-update:semver-major"; done = 1 }' \
-    .github/dependabot.yml > "$DIR/dotnet-hold/.github/dependabot.yml"
+  # plant <entry>: .github/dependabot.yml with <entry> in the first ignore
+  # list, or in a new one on the first update when the file holds nothing.
+  plant() {
+    if grep -Eq '^[ ]{4}ignore:' .github/dependabot.yml; then
+      awk -v e="$1" '{ print } /^[ ]{4}ignore:/ && !done { print e; done = 1 }' .github/dependabot.yml
+    else
+      awk -v e="$1" '{ print } /^  - package-ecosystem:/ && !done { print "    ignore:"; print e; done = 1 }' .github/dependabot.yml
+    fi
+  }
+  plant '      - dependency-name: node
+        versions:
+          - ">= 99, < 100"' > "$DIR/node-hold/.github/dependabot.yml"
+  plant '      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types:
+          - version-update:semver-major' > "$DIR/dotnet-hold/.github/dependabot.yml"
 
   local base=(RELEASES_INDEX_URL="file://$DIR/same-index.json" NODE_INDEX_URL="file://$DIR/node-same.json")
   expect 0 "" "the real files pass when they are on the newest majors" clean "${base[@]}"
