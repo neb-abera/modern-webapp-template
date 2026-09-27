@@ -23,10 +23,11 @@
 # vYYYY.MM.DD.N for the Nth of a day. --next reads the existing tag names on
 # stdin and prints the next one for today (UTC, or VERSION_TODAY).
 #
-# On 2026-09-27 the five repositories carried two numbers each that
-# disagreed: modern-cpp-template was tagged v2.6.0 while CMakeLists.txt said
-# 0.1.0, and cargo-semver-checks judged every Rust release against a
-# Cargo.toml that never moved.
+# On 2026-09-27 every repository's tags and manifests disagreed. A C++
+# template tagged v2.6.0 had 0.1.0 in CMakeLists.txt, and cargo-semver-checks
+# judged each Rust release against a Cargo.toml that never moved. The
+# comment names no repository: setup.sh fails a renamed copy that still
+# names its template.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
