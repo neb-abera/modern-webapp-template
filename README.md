@@ -102,7 +102,7 @@ every change, and CI runs the same script.
   majors included, once the repository enables Allow auto-merge and holds a
   `DEPENDABOT_AUTOMERGE_TOKEN` secret (a fine-grained PAT with contents and
   pull-requests write, so the merge still triggers CI and deploys). A major
-  that passes merges itself. One that breaks stays open and red. The monthly
+  that passes merges itself. One that breaks stays open and red. The weekly
   `dotnet-major-upgrade` workflow opens the PR for the next GA .NET major
   (close and reopen it to trigger CI). Scripts derive toolchain versions from
   the Dockerfile and `e2e/package.json`.
