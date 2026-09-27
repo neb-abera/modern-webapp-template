@@ -106,7 +106,7 @@ PLAYWRIGHT_IMAGE = mcr.microsoft.com/playwright:v$(shell sed -n 's|.*"@playwrigh
 
 test-server: ## run the server unit tests
 	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-nuget:/root/.nuget $(SDK_IMAGE) \
-		bash -c 'cp -r /src /w && cd /w/server && dotnet test Api.Tests -p:RestoreLockedMode=true'
+		bash -c 'cp -r /src /w && cd /w/server && dotnet test --project Api.Tests -p:RestoreLockedMode=true'
 
 test-client: ## run the client typecheck, lint and unit tests
 	docker run --rm -v $(CURDIR):/src:ro -v $(IMAGE)-npm:/npm-cache -e npm_config_cache=/npm-cache $(NODE_IMAGE) \

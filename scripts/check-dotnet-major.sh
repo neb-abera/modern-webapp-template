@@ -34,8 +34,20 @@
 #
 # The newest GA major is taken, LTS or STS: the releases index marks each
 # channel's support phase, and active or maintenance is GA. A preview or a
-# go-live release candidate is skipped. scripts/check-newest-majors.sh fails
-# when the repository is 45 days behind it.
+# go-live release candidate is never taken by this script.
+# scripts/check-newest-majors.sh fails when the repository is 45 days behind
+# it.
+#
+# A repository may run ahead of GA on purpose: a release candidate taken by
+# hand once the full gate suite was green on it. Then the script never moves
+# it back. While its major is not GA it changes nothing and says so. Once
+# that major is GA it promotes the prerelease pins to GA: every PackageVersion
+# on the framework's major with a prerelease label (11.0.0-rc.1.x) moves to
+# the newest stable release of that major, and every .NET image tag on that
+# channel carrying a prerelease marker (11.0-preview-resolute,
+# 11.0.100-rc.1-resolute) moves to the channel tag (11.0-resolute) with a
+# fresh digest. A package with no stable release yet is listed and left, and
+# the next run picks it up.
 #
 # --self-test is the upgrade, rehearsed. Every site above is copied into a
 # temp tree with this script beside it, and two packages are planted in each
@@ -45,11 +57,18 @@
 # registry that knows the new tags, a NuGet feed with a preview and a stable
 # release of the new major). The copy is run and every lockstep site must
 # have moved to the STS major, exactly, with the other package untouched.
-# Run again with an index whose only newer major is a release candidate it
-# must change nothing, with a registry whose runtime-image suffix changed it must find
-# the new tag, and with an index it cannot read it must fail saying so. Runs
-# unattended once a month, so this is the only time anyone watches it work:
-# CI runs it on every pull request.
+# Run again with a registry whose runtime-image suffix changed it must find
+# the new tag, and with an index it cannot read it must fail saying so.
+#
+# The prerelease path has four more. A prerelease package and a preview sdk
+# tag are planted on the current major. With an index whose newest GA major is
+# one behind, nothing moves. With an index that has the current major GA, the
+# prerelease pins move to GA and nothing else does, and a second run on that
+# result changes nothing. With a registry that lacks the GA tag it fails before
+# editing a file. Last, a copy of this script with the package promotion cut
+# out is run on the same tree, and the check must catch it. Runs unattended,
+# so this is the only time anyone watches it work: CI runs it on every pull
+# request.
 
 set -euo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -97,12 +116,14 @@ current_framework() {
   printf '%s\n' "$versions"
 }
 # aspnet_suffix: the OS suffix of the aspnet image tag (10.0-resolute-chiseled
-# gives resolute-chiseled), from the first Dockerfile that names one.
+# gives resolute-chiseled), from the first Dockerfile that names one. A
+# preview marker is not part of it (11.0-preview-resolute-chiseled gives
+# resolute-chiseled too).
 aspnet_suffix() {
   local f
   for f in $(image_files); do
     sed -n 's|^FROM mcr\.microsoft\.com/dotnet/aspnet:[0-9.]*-\([a-z-]*\)@.*|\1|p' "$f"
-  done | head -1
+  done | head -1 | sed 's/^preview-//'
 }
 # sdk_suffix: the OS suffix of the sdk image tag (10.0-resolute gives
 # resolute), empty when the sdk tag is the bare channel version.
@@ -110,11 +131,11 @@ sdk_suffix() {
   local f
   for f in $(image_files); do
     sed -n 's|^FROM mcr\.microsoft\.com/dotnet/sdk:[0-9.]*-\([a-z-]*\)@.*|\1|p' "$f"
-  done | head -1
+  done | head -1 | sed 's/^preview$//; s/^preview-//'
 }
 
 self_test() {
-  local dir current major next sts suffix sdk_tag_suffix sdk_digest aspnet_digest failed=0 sites f
+  local dir current major prev next sts suffix sdk_tag_suffix sdk_digest aspnet_digest ga_digest failed=0 sites f
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064 # expand now: the directory name is fixed
   trap "rm -rf '$dir'" EXIT
@@ -129,24 +150,41 @@ self_test() {
     return 1
   fi
   major="${current%%.*}"
+  prev="$((major - 1)).0"
   next="$((major + 2)).0"
   sts="$((major + 1)).0"
   sdk_digest="sha256:$(printf '%064d' 0 | tr 0 a)"
   aspnet_digest="sha256:$(printf '%064d' 0 | tr 0 b)"
+  ga_digest="sha256:$(printf '%064d' 0 | tr 0 c)"
 
-  # The planted tree: every real site, two planted packages in each package
-  # file, and this script. Each scenario runs on its own copy of it.
+  # The planted tree: every real site, three planted packages in each package
+  # file (one on the framework's major, one on a prerelease of it, one with
+  # its own versioning), and this script. Each scenario runs on its own copy
+  # of it.
   mkdir -p "$dir/planted/scripts"
   for f in $sites; do
     mkdir -p "$dir/planted/$(dirname "$f")"
     cp "$f" "$dir/planted/$f"
   done
   for f in $(package_files); do
-    perl -0pi -e "s|(\\n\\s*</ItemGroup>)|\\n    <PackageVersion Include=\"Planted.Tracks.Framework\" Version=\"$major.0.4\" />\\n    <PackageVersion Include=\"Planted.Own.Versioning\" Version=\"3.2.1\" />\$1|" "$dir/planted/$f"
+    perl -0pi -e "s|(\\n\\s*</ItemGroup>)|\\n    <PackageVersion Include=\"Planted.Tracks.Framework\" Version=\"$major.0.4\" />\\n    <PackageVersion Include=\"Planted.Prerelease\" Version=\"$major.0.0-rc.1.1\" />\n    <PackageVersion Include=\"Planted.Own.Versioning\" Version=\"3.2.1\" />\$1|" "$dir/planted/$f"
   done
   cp "$SELF" "$dir/planted/scripts/check-dotnet-major.sh"
   local tree
-  for tree in upgrade resuffixed current unreadable; do cp -R "$dir/planted" "$dir/$tree"; done
+  for tree in upgrade resuffixed ahead promote nogatag mutant unreadable; do cp -R "$dir/planted" "$dir/$tree"; done
+  # The prerelease trees also carry a preview sdk tag on the current channel.
+  for tree in ahead promote nogatag mutant; do
+    for f in $(cd "$dir/planted" && image_files); do
+      perl -pi -e "s|dotnet/sdk:\\Q$current\\E(-[a-z-]+)?\\@|dotnet/sdk:$current-preview\\1\\@|" "$dir/$tree/$f"
+    done
+  done
+  # The mutant runs a copy of this script with the package promotion cut
+  # out. The check below must catch it, or it proves nothing.
+  perl -ni -e 'print unless /# self-test: the mutant drops this line$/' "$dir/mutant/scripts/check-dotnet-major.sh"
+  if cmp -s "$SELF" "$dir/mutant/scripts/check-dotnet-major.sh"; then
+    echo "self-test FAILED: the mutant is identical to the script; the marked line is gone" >&2
+    return 1
+  fi
 
   # Fixtures the stubs answer from.
   mkdir -p "$dir/fixture" "$dir/bin"
@@ -157,9 +195,15 @@ self_test() {
     "$((major + 4)).0" "$((major + 3)).0" "$next" "$sts" > "$dir/fixture/index-next.json"
   printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"go-live"},{"channel-version":"%s","release-type":"lts","support-phase":"active"}]}\n' \
     "$sts" "$current" > "$dir/fixture/index-current.json"
+  # The current major is a go-live release candidate and the newest GA major
+  # is the one before it: a repository ahead of GA on purpose.
+  printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"go-live"},{"channel-version":"%s","release-type":"lts","support-phase":"active"}]}\n' \
+    "$current" "$prev" > "$dir/fixture/index-ahead.json"
   printf '{"releases-index":[{"channel-version":"%s","release-type":"sts","support-phase":"preview"}]}\n' "$sts" > "$dir/fixture/index-empty.json"
-  # A preview of the new major that must be skipped and a stable one that must be taken.
-  printf '{"versions":["%s.0","%s.0-preview.1","%s.3"]}\n' "$current" "$next" "$next" > "$dir/fixture/nuget.json"
+  # For the new major, a preview that must be skipped and a stable one that
+  # must be taken. For the current one, a release candidate and two stable
+  # releases, the newer of which a promotion must take.
+  printf '{"versions":["%s.0.0-rc.1.1","%s.0","%s.0.2","%s.0-preview.1","%s.3"]}\n' "$major" "$current" "$major" "$next" "$next" > "$dir/fixture/nuget.json"
 
   # The stubs. curl's last argument is the URL; docker is only ever asked
   # `buildx imagetools inspect <ref> [--format ...]`, where the ref is $4.
@@ -179,6 +223,7 @@ STUB
 case "\$4" in
   mcr.microsoft.com/dotnet/sdk:$next$sdk_tag_suffix) echo "$sdk_digest" ;;
   mcr.microsoft.com/dotnet/aspnet:\$STUB_ASPNET_TAG) echo "$aspnet_digest" ;;
+  mcr.microsoft.com/dotnet/sdk:$current$sdk_tag_suffix) [ -z "\$STUB_NO_GA_TAG" ] || exit 1; echo "$ga_digest" ;;
   *) echo "stub docker: no such image \$4" >&2; exit 1 ;;
 esac
 STUB
@@ -221,8 +266,32 @@ STUB
     grep -q "net$current\*\* to \*\*net$next" "$tree.summary.md"
   }
   # shellcheck disable=SC2329  # invoked through check()
-  unchanged() { # unchanged <tree>: every site is byte-identical to the planted tree
-    diff -r "$dir/planted" "$dir/$1" > /dev/null
+  promoted() { # promoted <tree>: the prerelease pins, and nothing else, are on GA
+    local tree="$dir/$1" f pre
+    for f in $(cd "$dir/planted" && framework_files); do
+      cmp -s "$dir/planted/$f" "$tree/$f" || return 1
+    done
+    for f in $(cd "$dir/planted" && image_files); do
+      ! grep -Eq "dotnet/(sdk|aspnet):[^ @]*-(preview|rc)" "$tree/$f" || return 1
+      [ "$(grep -E '^FROM mcr\.microsoft\.com/dotnet/aspnet:' "$dir/planted/$f")" \
+        = "$(grep -E '^FROM mcr\.microsoft\.com/dotnet/aspnet:' "$tree/$f")" ] || return 1
+    done
+    grep -rq "^FROM mcr.microsoft.com/dotnet/sdk:$current$sdk_tag_suffix@$ga_digest " "$tree" || return 1
+    for f in $(cd "$dir/planted" && package_files); do
+      ! grep -q "Version=\"$major\.[^\"]*-" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Prerelease\" Version=\"$major.0.2\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Tracks.Framework\" Version=\"$major.0.4\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Own.Versioning\" Version=\"3.2.1\"" "$tree/$f" || return 1
+      pre="Version=\"$major\.[^\"]*-"
+      [ "$(grep -c "$pre" "$dir/planted/$f")" = "$(grep -c "Version=\"$major.0.2\"" "$tree/$f")" ] || return 1
+      [ "$(grep -v "$pre" "$dir/planted/$f")" = "$(grep -v "Version=\"$major.0.2\"" "$tree/$f")" ] || return 1
+    done
+    grep -q "^new-version=$current$" "$tree.output" || return 1
+    grep -q "net$current\*\* from its prerelease pins to GA" "$tree.summary.md"
+  }
+  # shellcheck disable=SC2329  # invoked through check()
+  unchanged() { # unchanged <tree> [<before>]: every site is byte-identical to the planted tree, or to <before>
+    diff -r "${2:-$dir/planted}" "$dir/$1" > /dev/null
   }
 
   run upgrade index-next.json "$next-$suffix"
@@ -236,10 +305,31 @@ STUB
     moved_everything resuffixed "$next-plucky-chiseled"
   check "the summary says the suffix changed" grep -q "aspnet suffix changed: using $next-plucky-chiseled" <<< "$out"
 
-  run current index-current.json "$next-$suffix"
-  check "an index whose only newer major is a release candidate changes nothing (exit $code)" [ "$code" -eq 0 ]
-  check "it says so" grep -q "net$current is the latest GA major" <<< "$out"
-  check "and every site is untouched" unchanged current
+  cp -R "$dir/ahead" "$dir/prerelease"
+  run ahead index-ahead.json "$next-$suffix"
+  check "a repository on a release candidate ahead of the newest GA major (net$prev) is not moved back (exit $code)" [ "$code" -eq 0 ]
+  check "it says so" grep -q "net$current is ahead of the newest GA major" <<< "$out"
+  check "and every site is untouched" unchanged ahead "$dir/prerelease"
+
+  run promote index-current.json "$next-$suffix"
+  check "once net$current is GA its prerelease pins are promoted, while a newer major that is only a release candidate is skipped (exit $code)" [ "$code" -eq 0 ]
+  check "every prerelease package on the major and the preview sdk tag moved to GA, and nothing else did: the TargetFramework, a stable package on the major, a package with its own versioning, the aspnet image" \
+    promoted promote
+  cp -R "$dir/promote" "$dir/promote.before"
+  run promote index-current.json "$next-$suffix"
+  check "a second run on the promoted tree (exit $code)" [ "$code" -eq 0 ]
+  check "says the major is GA with nothing to promote" grep -q "net$current is the latest GA major" <<< "$out"
+  check "and changes nothing" unchanged promote "$dir/promote.before"
+
+  STUB_NO_GA_TAG=1 run nogatag index-current.json "$next-$suffix"
+  check "a registry without the GA image tag fails the promotion (exit $code)" [ "$code" -ne 0 ]
+  check "it says which tag" grep -q "no GA image mcr.microsoft.com/dotnet/sdk:$current$sdk_tag_suffix" <<< "$out"
+  check "and every site is untouched" unchanged nogatag "$dir/prerelease"
+
+  run mutant index-current.json "$next-$suffix"
+  check "a copy of the script with the package promotion cut out still exits 0 (exit $code)" [ "$code" -eq 0 ]
+  check "and the promotion check catches it: a planted failure, so the check above is proven to fail" \
+    eval '! promoted mutant'
 
   run unreadable index-empty.json "$next-$suffix"
   check "an index with no GA release fails rather than upgrading to nothing (exit $code)" [ "$code" -ne 0 ]
@@ -247,7 +337,7 @@ STUB
   check "and every site is untouched" unchanged unreadable
 
   if [ "$failed" -eq 0 ]; then
-    echo "self-test: a planted stale major was upgraded to the next GA major (an STS one) at every lockstep site, a changed image suffix was found, a release candidate was left alone, an index with no GA release failed"
+    echo "self-test: a planted stale major was upgraded to the next GA major (an STS one) at every lockstep site, a changed image suffix was found, a release candidate ahead of GA was left alone and promoted once GA, a missing GA tag failed, a mutant was caught, an index with no GA release failed"
   fi
   return "$failed"
 }
@@ -274,19 +364,114 @@ latest="$(curl -fsSL "$RELEASES_INDEX_URL" | jq -r '
 cur_major="${current%%.*}"
 new_major="${latest%%.*}"
 
-if [ "$new_major" -le "$cur_major" ]; then
-  note "net${current} is the latest GA major (index says ${latest}); nothing to do."
-  echo "Already on the latest GA .NET major (net${current})." > "$SUMMARY_FILE"
+if [ "$new_major" -lt "$cur_major" ]; then
+  note "net${current} is ahead of the newest GA major (index says ${latest}): a prerelease taken on purpose. Nothing moves until ${cur_major}.0 is GA."
+  echo "net${current} is ahead of the newest GA .NET major (${latest}). Nothing to do until it is GA." > "$SUMMARY_FILE"
   exit 0
 fi
-
-note ".NET ${latest} is GA; currently on net${current}. Rewriting the lockstep sites."
 
 projects="$(framework_files)"
 images="$(image_files)"
 packages="$(package_files)"
 
 digest_of() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}'; }
+bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
+
+# promote: the current major is GA. Move its prerelease pins to GA: each
+# package on the major with a prerelease label to the major's newest stable
+# release, each image tag on the channel with a prerelease marker to the
+# channel tag. Every image is resolved before any file is edited, so a GA tag
+# the registry does not have yet fails with the tree untouched.
+promote() {
+  local f ref tag new_tag digest moves="" pkg lower new_ver bumped="" pending="" old new
+  for ref in $(for f in $images; do
+      grep -ohE "mcr\.microsoft\.com/dotnet/(sdk|aspnet):${current//./\\.}[^@ ]*@sha256:[0-9a-f]+" "$f"
+    done | sort -u); do
+    tag="${ref%@*}"
+    [[ "$tag" =~ -(preview|rc) ]] || continue
+    new_tag="$(printf '%s' "$tag" | perl -pe "s/:\Q${current}\E(?:\.\d+)*-(?:preview|rc)(?:\.\d+)*(?=-|\$)/:${current}/")"
+    digest="$(digest_of "$new_tag")" || { echo "error: no GA image $new_tag in the registry yet; nothing was changed" >&2; exit 1; }
+    moves="${moves}${ref} ${new_tag}@${digest}"$'\n'
+  done
+
+  # shellcheck disable=SC2086 # one path per word
+  while read -r pkg; do
+    [ -n "$pkg" ] || continue
+    lower="$(echo "$pkg" | tr '[:upper:]' '[:lower:]')"
+    new_ver="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/${lower}/index.json" \
+      | jq -r --arg m "${cur_major}." '.versions | map(select(startswith($m) and (contains("-") | not))) | last // empty')"
+    if [ -n "$new_ver" ]; then
+      for f in $packages; do replace "$f" "s|(Include=\"\Q${pkg}\E\" Version=\")\Q${cur_major}\E\.[^\"]*-[^\"]*|\${1}${new_ver}|"; done # self-test: the mutant drops this line
+      bumped="${bumped}- \`${pkg}\` → ${new_ver}\n"
+    else
+      pending="${pending}- \`${pkg}\` has no stable ${cur_major}.x release yet\n"
+    fi
+  done < <(sed -n "s/.*PackageVersion Include=\"\([^\"]*\)\" Version=\"${cur_major}\.[^\"]*-.*/\1/p" $packages | sort -u)
+
+  while read -r old new; do
+    [ -n "$old" ] || continue
+    # Through the environment: perl would read @sha256 in the program text as
+    # an array.
+    for f in $images; do OLD="$old" NEW="$new" perl -pi -e 's/\Q$ENV{OLD}\E/$ENV{NEW}/g' "$f"; done
+  done <<< "$moves"
+
+  if [ -z "$moves" ] && [ -z "$bumped" ]; then
+    note "net${current} is the latest GA major (index says ${latest}); nothing to do."
+    {
+      echo "Already on the latest GA .NET major (net${current}), with no prerelease pin that has a GA release."
+      [ -z "$pending" ] || printf '\n%b' "$pending"
+    } > "$SUMMARY_FILE"
+    [ -z "$pending" ] || printf '%b' "$pending"
+    return 0
+  fi
+
+  note ".NET ${current} is GA; moving its prerelease pins to GA."
+  {
+    echo "Moves **net${current}** from its prerelease pins to GA. The releases index lists .NET ${current} as GA."
+    if [ -n "$bumped" ]; then
+      echo
+      echo "Packages:"
+      echo
+      printf '%b' "$bumped"
+    fi
+    if [ -n "$moves" ]; then
+      echo
+      echo "Images, digest-pinned:"
+      echo
+      while read -r old new; do
+        [ -z "$old" ] || echo "- \`${old%@*}\` → \`${new%@*}\`"
+      done <<< "$moves"
+    fi
+    locks="$(source_files -name packages.lock.json)"
+    if [ -n "$locks" ]; then
+      echo
+      echo "Regenerate the lock files on this branch before it can build. Run \`dotnet restore --force-evaluate\` in the SDK image for each project below, then commit every lock file that moved:"
+      echo
+      # shellcheck disable=SC2046 # one path per word
+      bullets $(for f in $locks; do dirname "$f"; done)
+    fi
+    if [ -n "$pending" ]; then
+      echo
+      echo "Left for the next run, once these ship:"
+      echo
+      printf '%b' "$pending"
+    fi
+    echo
+    echo "Opened by \`dotnet-major-upgrade.yml\`. CI does not run on a pull request opened with the workflow token. Close and reopen this one, or push an empty commit, to run the checks."
+  } > "$SUMMARY_FILE"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "new-version=${current}" >> "$GITHUB_OUTPUT"
+    echo "title=Move .NET ${current} from prerelease to GA" >> "$GITHUB_OUTPUT"
+  fi
+  note "done: net${current} prerelease pins -> GA"
+}
+
+if [ "$new_major" -eq "$cur_major" ]; then
+  promote
+  exit 0
+fi
+
+note ".NET ${latest} is GA; currently on net${current}. Rewriting the lockstep sites."
 
 # The sdk tag is the channel version with the OS suffix the Dockerfile
 # already uses, if any (10.0-resolute). The aspnet tag carries an OS
@@ -340,8 +525,6 @@ done < <(sed -n "s/.*PackageVersion Include=\"\([^\"]*\)\" Version=\"${cur_major
 
 locks="$(source_files -name packages.lock.json)"
 
-bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
-
 {
   echo "Moves the repo from **net${current}** to **net${latest}**, the latest GA .NET major."
   echo
@@ -381,6 +564,7 @@ bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "new-version=${latest}" >> "$GITHUB_OUTPUT"
+  echo "title=Upgrade to .NET ${latest}" >> "$GITHUB_OUTPUT"
 fi
 
 note "done: net${current} -> net${latest}"
