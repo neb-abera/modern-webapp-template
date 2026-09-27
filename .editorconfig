@@ -10,20 +10,6 @@ trim_trailing_whitespace = true
 
 [*.cs]
 indent_size = 4
-# The .NET 11 SDK reports the IDE style rules in the build under
-# AnalysisLevel latest-all, and TreatWarningsAsErrors makes each one an
-# error. These lines state the style the code is written in.
-csharp_style_var_for_built_in_types = true
-csharp_style_var_when_type_is_apparent = true
-csharp_style_var_elsewhere = true
-csharp_style_namespace_declarations = file_scoped
-csharp_style_expression_bodied_methods = true
-csharp_style_expression_bodied_local_functions = true
-dotnet_style_prefer_conditional_expression_over_return = false
-dotnet_style_prefer_conditional_expression_over_assignment = false
-# A fluent call whose result is not needed (services.AddX(), app.UseX())
-# is the normal ASP.NET Core shape. A discard on each would be noise.
-dotnet_diagnostic.IDE0058.severity = none
 
 [Makefile]
 indent_style = tab
