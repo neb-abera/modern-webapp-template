@@ -130,7 +130,7 @@ build_and_test() (
 
   step "Server tests of the renamed copy"
   docker run --rm -v "$tree":/src:ro -v "$name-nuget:/root/.nuget" "$sdk" \
-    bash -c 'cp -r /src /w && cd /w/server && dotnet test Api.Tests -c Release -p:RestoreLockedMode=true'
+    bash -c 'cp -r /src /w && cd /w/server && dotnet test --project Api.Tests -c Release -p:RestoreLockedMode=true'
 
   step "Client typecheck and tests of the renamed copy"
   docker run --rm -v "$tree":/src:ro -v "$name-npm:/npm-cache" -e npm_config_cache=/npm-cache "$node" \

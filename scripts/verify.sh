@@ -348,7 +348,7 @@ server_tests() {
     cp -r /src /w
     cd /w/server
     if [ "$COVERAGE_MODE" = coverage ]; then
-      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura --coverlet-single-hit
+      dotnet test --project Api.Tests -c Release -p:RestoreLockedMode=true -- --coverlet --coverlet-output-format cobertura --coverlet-single-hit
       report="$(find . -name "coverage.cobertura.*.xml" | head -1)"
       [ -n "$report" ] || { echo "error: no cobertura report produced" >&2; exit 1; }
       if [ -d /covout ]; then cp "$report" /covout/server-cobertura.xml; fi
@@ -358,7 +358,7 @@ server_tests() {
         exit (r * 100 >= m) ? 0 : 1
       }"
     else
-      dotnet test Api.Tests -c Release -p:RestoreLockedMode=true
+      dotnet test --project Api.Tests -c Release -p:RestoreLockedMode=true
     fi
   '
 }
