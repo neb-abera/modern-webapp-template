@@ -20,7 +20,7 @@
 #
 # Dependabot keeps everything current within a major but never crosses one,
 # because the TargetFramework gates it; this script makes the cross-major
-# jump. Run monthly by .github/workflows/dotnet-major-upgrade.yml, and safe
+# jump. Run weekly by .github/workflows/dotnet-major-upgrade.yml, and safe
 # to run locally: it only edits files, never commits.
 #
 #   scripts/check-dotnet-major.sh              run the check

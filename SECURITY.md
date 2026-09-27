@@ -48,7 +48,7 @@ Projects generated from this template ship with:
 * GitHub Actions pinned to full commit SHAs and container base images to
   digests, both kept current by Dependabot (actions, docker, docker-compose,
   nuget and both npm ecosystems, patch/minor bumps grouped per ecosystem),
-  with the monthly `dotnet-major-upgrade` workflow covering the jump to the
+  with the weekly `dotnet-major-upgrade` workflow covering the jump to the
   next GA .NET major that Dependabot cannot make, a check that .NET and Node
   are on their newest GA majors (`scripts/check-newest-majors.sh`),
   and the verify suite's held-majors check

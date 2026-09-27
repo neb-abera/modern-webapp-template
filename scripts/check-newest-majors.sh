@@ -16,7 +16,7 @@
 #      has been out GRACE_DAYS.
 #   3. Every node image is on the newest major in NODE_INDEX_URL, which lists
 #      releases only, once its first release has been out GRACE_DAYS.
-# GRACE_DAYS (45) covers the monthly dotnet-major-upgrade run and a weekly
+# GRACE_DAYS (45) covers the weekly dotnet-major-upgrade run and a weekly
 # Dependabot major that has to be fixed before it merges.
 #
 #   scripts/check-newest-majors.sh              check the repository

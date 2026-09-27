@@ -368,7 +368,7 @@ else
 fi
 
 #
-# Let workflows open pull requests. The monthly dotnet-major-upgrade
+# Let workflows open pull requests. The weekly dotnet-major-upgrade
 # workflow proposes framework bumps as PRs; without this repository
 # setting its create-pull-request step fails. Default token permissions
 # stay read-only: workflows that need more grant it per job.

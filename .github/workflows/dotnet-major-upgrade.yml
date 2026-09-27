@@ -5,14 +5,15 @@
 # framework; scripts/check-dotnet-major.sh makes that cross-major jump with
 # all the lockstep sites in one commit.
 #
-# Runs monthly (a major ships every November) and does nothing when
-# already current. PRs opened with the default workflow token do not trigger CI —
-# close and reopen the PR (or push an empty commit) to run the checks.
+# Runs weekly, on Mondays, so a GA major is picked up within 7 days, and
+# does nothing when already current. PRs opened with the default workflow
+# token do not trigger CI. Close and reopen the PR (or push an empty commit)
+# to run the checks.
 name: dotnet-major-upgrade
 
 on:
   schedule:
-    - cron: "0 6 3 * *"
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 # Nothing at the workflow level: the write grants live on the one job that
