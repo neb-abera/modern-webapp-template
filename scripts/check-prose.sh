@@ -19,6 +19,11 @@
 # fails on any alert. A rule with no line in fails.md is a rule nobody has
 # seen fail, so adding a rule means adding its line.
 #
+# Last, it runs the no-argument path in a temporary git repository with no
+# Markdown file and fails unless that returns exit 0 within 10 s. Without
+# `xargs -r`, GNU xargs runs the script once with no arguments, which takes
+# the same path again, and it recursed without end on 2026-09-28.
+#
 # Runs in the Vale image the Dockerfile pins (the `vale` stage, which
 # Dependabot bumps); the host needs only Docker.
 
@@ -72,10 +77,42 @@ if [ "${1:-}" = "--self-test" ]; then
     failed=1
   fi
 
+  # With no tracked Markdown file, the no-argument path ends at once. Job
+  # control puts the run in its own process group, so a recursing script is
+  # killed whole.
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/scripts" "$tmp/$STYLE_DIR"
+  cp scripts/check-prose.sh "$tmp/scripts/"
+  echo "FROM $VALE_IMAGE AS vale" > "$tmp/Dockerfile"
+  git -C "$tmp" init -q
+  set -m
+  "$tmp/scripts/check-prose.sh" > "$tmp.out" 2>&1 &
+  pid=$!
+  set +m
+  for _ in $(seq 100); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -- -"$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    echo "self-test FAILED: the no-argument path with no Markdown file ran past 10 s" >&2
+    failed=1
+  else
+    code=0
+    wait "$pid" || code=$?
+    if [ "$code" -ne 0 ]; then
+      echo "self-test FAILED: the no-argument path with no Markdown file exited $code:" >&2
+      cat "$tmp.out" >&2
+      failed=1
+    fi
+  fi
+  rm -rf "$tmp" "$tmp.out"
+
   if [ "$failed" -ne 0 ]; then
     exit 1
   fi
-  echo "self-test passed: $(printf '%s\n' "$fired" | grep -c .) rules fire on fails.md, passes.md is clean"
+  echo "self-test passed: $(printf '%s\n' "$fired" | grep -c .) rules fire on fails.md, passes.md is clean, no Markdown exits 0"
   exit 0
 fi
 
@@ -84,5 +121,5 @@ if [ "$#" -gt 0 ]; then
 else
   # Every tracked Markdown file except the self-test fixtures, one of which
   # fails by design.
-  git ls-files -z -- '*.md' ':(exclude).vale/fixtures/*' | xargs -0 scripts/check-prose.sh
+  git ls-files -z -- '*.md' ':(exclude).vale/fixtures/*' | xargs -0 -r scripts/check-prose.sh
 fi
