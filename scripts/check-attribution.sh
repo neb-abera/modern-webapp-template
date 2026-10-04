@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 #
-# check-attribution.sh — refuse commits that credit an AI.
+# check-attribution.sh — refuse commits that name an AI as an author.
 #
 #   scripts/check-attribution.sh                  HEAD against the default branch
 #   scripts/check-attribution.sh <range>          any git range, e.g. abc123..def456
 #   scripts/check-attribution.sh --all            every commit reachable from HEAD
 #   scripts/check-attribution.sh --self-test      prove it fires and prove it passes
 #
-# Nothing published under Neb's name credits an AI. No `Co-Authored-By: Claude`
-# trailer on a commit, no `Generated with Claude Code` line. The rule is the
-# Attribution section of the global CLAUDE.md.
+# AI help on Neb's work is disclosed as an `Assisted-by:` trailer. It never
+# appears as a `Co-Authored-By: Claude` trailer or a `Generated with Claude Code`
+# line. The rule is the Attribution section of the global CLAUDE.md, in force
+# since 2026-10-04. Assisted-by passes this check.
 #
 # Two gates already existed and both have the same blind spot: they run on the
-# machine making the commit. `git-hooks/commit-msg` strips the trailer, and
+# machine making the commit. `git-hooks/commit-msg` turns the trailer into Assisted-by, and
 # `.claude/hooks/no-ai-attribution.sh` refuses a `gh` command that would publish
 # one. A commit made anywhere those are not installed reaches a pull request
 # untouched.
@@ -70,8 +71,9 @@ check_range() {
   if [ "$offenders" -gt 0 ]; then
     cat >&2 <<MSG
 
-$offenders of $read commits credit an AI. Nothing published under Neb's name does
-(global CLAUDE.md, "Attribution"). Rewrite the messages before this merges:
+$offenders of $read commits name an AI as an author. AI help is disclosed as
+"Assisted-by: <model id>" (global CLAUDE.md, "Attribution"). Reword them before
+this merges:
 
   git rebase -i ${range%%..*}      # reword each one listed above
 
@@ -81,7 +83,7 @@ MSG
     return 1
   fi
 
-  printf 'attribution: %s commits carry no AI credit\n' "$read"
+  printf 'attribution: %s commits name no AI as an author\n' "$read"
 }
 
 self_test() {
@@ -90,7 +92,7 @@ self_test() {
   trap 'rm -rf "$work"' RETURN
 
   # core.hooksPath is set globally on Neb's machines, so a temp repo inherits
-  # git-hooks/commit-msg, which strips the trailer before this test can plant
+  # git-hooks/commit-msg, which rewrites the trailer before this test can plant
   # one. Point it at an empty directory: the whole point here is to commit
   # something the other gate would have refused.
   mkdir -p "$work/nohooks"
@@ -108,6 +110,14 @@ self_test() {
   git -C "$work" commit -q --allow-empty -m "a clean message"
   if ! (cd "$work" && "$SELF" "$base..HEAD") >/dev/null 2>&1; then
     echo "self-test FAILED: a clean range was refused" >&2
+    return 1
+  fi
+
+  # Disclosure as Assisted-by must pass.
+  git -C "$work" commit -q --allow-empty \
+    -m "$(printf 'disclosed\n\nAssisted-by: claude-opus-5-5')"
+  if ! (cd "$work" && "$SELF" "$base..HEAD") >/dev/null 2>&1; then
+    echo "self-test FAILED: an Assisted-by trailer was refused" >&2
     return 1
   fi
 
