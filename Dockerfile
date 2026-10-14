@@ -69,13 +69,13 @@ CMD ["sh", "-c", "dotnet build server/Api -c Release -p:RestoreLockedMode=true &
 # Prose linter, for scripts/check-prose.sh. Never built into anything: the
 # stage exists so the image is a FROM line Dependabot sees and bumps, and the
 # script reads it from here rather than pinning a version of its own.
-FROM jdkato/vale:v3.23.0@sha256:d87d6355dc8992f92ec39c4c862a388e56e30302a771fd4512c02660fb25cdf3 AS vale
+FROM jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4 AS vale
 
 # The scanners CI runs, for their versions only: trivy-action and
 # sbom-action take a version input, and these FROM lines are what
 # Dependabot bumps. Nothing is built from them.
 FROM aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa AS trivy
-FROM anchore/syft:v1.52.0@sha256:500e2d872ac019436926e8322b4fc1f39441d94d21f6f4046c6ff29b30e8cb02 AS syft
+FROM anchore/syft:v1.54.1@sha256:3eb5379ba7b409c3f4069b686110527af0c47df993fa5c10d13e7cf34f49b1aa AS syft
 
 # Workflow and script linter, for `make lint` and the CI lint job. Never
 # built into anything, like the vale stage: the image carries actionlint and
