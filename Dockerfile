@@ -6,7 +6,7 @@
 # trixie-slim (glibc 2.41) stays binary-compatible with the Ubuntu 26.04
 # .NET SDK image (glibc 2.43) the dev stage copies Node into.
 #
-FROM node:26-trixie-slim@sha256:ec7758ee051e457b468b32bde57b0879010b325bb9862718e9615225ce4aaae1 AS node-base
+FROM node:26-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0 AS node-base
 
 #
 # Client build
