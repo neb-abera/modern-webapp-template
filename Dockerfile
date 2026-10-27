@@ -106,7 +106,7 @@ RUN ! vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/fails.m
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
-FROM mcr.microsoft.com/dotnet/aspnet:11.0-resolute-chiseled@sha256:f502def1917cec1c8e401a65b5866704dd51ca99857f139ff11bf7f7685d7fa0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-resolute-chiseled@sha256:1431d55bf5bd5708450c10664f3d4c4603d7e60cc059e64397787de3978f3e8c AS runtime
 WORKDIR /app
 # Owned by the user the app runs as. Without the --chown the mode travels
 # from the build context: a developer whose umask is 007 checks
