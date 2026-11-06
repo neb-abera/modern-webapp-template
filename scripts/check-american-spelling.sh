@@ -30,8 +30,11 @@ words() {
 findings() {
   local pattern
   pattern="\\b($(words))\\b"
-  git ls-files -z -- '*.ts' '*.tsx' '*.cs' '*.mjs' '*.js' '*.sh' '*.yml' '*.yaml' \
-    ':!*/Migrations/*' ':!**/*.Designer.cs' ':!.vale/*' ':!scripts/check-american-spelling.sh' \
+  git ls-files -z -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' \
+    '*.cs' '*.csproj' '*.props' '*.rs' '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' '*.cxx' \
+    '*.cmake' 'CMakeLists.txt' '*.py' '*.go' '*.java' '*.kt' '*.swift' \
+    '*.css' '*.scss' '*.sh' '*.bash' '*.yml' '*.yaml' '*.toml' '*.json' 'Dockerfile' '*.Dockerfile' \
+    ':!*/Migrations/*' ':!**/package-lock.json' ':!**/Cargo.lock' ':!**/*.Designer.cs' ':!.vale/*' ':!scripts/check-american-spelling.sh' \
     | { xargs -0 -r grep -n -i -w -E "$pattern" -- 2>/dev/null || true; } \
     | while IFS= read -r hit; do
         local path="${hit%%:*}" rest="${hit#*:}"
