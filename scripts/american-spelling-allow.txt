@@ -1,0 +1,3 @@
+# Outside values that keep their British spelling. One per line:
+# path<TAB>extended regex the line must match<TAB>why.
+# scripts/check-american-spelling.sh reads this file.

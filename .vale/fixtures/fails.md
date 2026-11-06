@@ -25,3 +25,5 @@ Preamble: in this guide we build in a container.
 Cliches: under the hood, it builds in a container.
 
 Rhetorical: The result? It builds in a container.
+
+American: the forecast was modelled from the colour of the data.

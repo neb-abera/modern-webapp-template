@@ -97,6 +97,8 @@ generate: ## rename a copy of this tree the way setup.sh does, then build and te
 prose: ## lint the Markdown and the built pages against the writing rules (.vale/styles/Abera)
 	./scripts/check-prose.sh --self-test
 	./scripts/check-prose.sh
+	./scripts/check-american-spelling.sh --self-test
+	./scripts/check-american-spelling.sh
 	docker build --target pageprose .
 
 # Toolchain images are derived from the Dockerfile and e2e/package.json the

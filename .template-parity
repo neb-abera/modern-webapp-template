@@ -28,6 +28,8 @@ scripts/check-prose.sh
 .vale/styles/Abera/Preamble.yml
 .vale/styles/Abera/Rhetorical.yml
 .vale/styles/Abera/Semicolon.yml
+.vale/styles/Abera/American.yml
+scripts/check-american-spelling.sh
 scripts/check-attribution.sh
 scripts/check-concurrency.sh
 scripts/check-required-contexts.sh

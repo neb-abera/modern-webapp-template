@@ -408,15 +408,21 @@ banner "Prose: the Markdown and the built pages pass the writing rules"
 # rule and every rule must fire on it, another is clean and must pass, so a
 # rule that has stopped matching is caught here rather than trusted.
 #
+# Then the code's own text: scripts/check-american-spelling.sh reads strings
+# and comments with the Abera/American word list, because Vale reads only
+# Markdown and HTML.
+#
 # Then the pages, through the `pageprose` stage: the prerendered HTML the
 # image ships, checked as a reader is given it rather than as source. A
 # README lints and the page beside it does not is how a line of copy that
 # breaks every rule stays live.
 if ./scripts/check-prose.sh --self-test > "$LOG" 2>&1 \
    && ./scripts/check-prose.sh >> "$LOG" 2>&1 \
+   && ./scripts/check-american-spelling.sh --self-test >> "$LOG" 2>&1 \
+   && ./scripts/check-american-spelling.sh >> "$LOG" 2>&1 \
    && docker build --target pageprose -t "$NAME-pageprose" . >> "$LOG" 2>&1; then
   grep -E '^self-test' "$LOG" || true
-  pass "Prose passes .vale/styles/Abera, in the Markdown and on the pages"
+  pass "Prose passes .vale/styles/Abera, in the Markdown, the code's text, and on the pages"
 else
   tail -40 "$LOG"
   fail "Prose (a rule violation in a Markdown file or a built page, or a broken self-test)"

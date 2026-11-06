@@ -16,7 +16,7 @@ rules if you adapt it to another host.
    `workflow_dispatch` stays available for redeploying the current main
    without a new commit.
 
-2. **One deploy at a time, never cancelled mid-flight**
+2. **One deploy at a time, never canceled mid-flight**
    (`concurrency: deploy-production, cancel-in-progress: false`). The group
    holds one pending run, and a newer run replaces it. CI runs once per
    commit and two runs can finish in either order. So the `target` job

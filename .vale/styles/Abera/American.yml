@@ -1,0 +1,69 @@
+# American spelling. Neb, 2026-11-06, after "Modelled" reached abera.tech.
+# An outside value (an API status, a URL, a quoted title) keeps its spelling:
+# put it in code formatting, which Vale skips.
+extends: substitution
+message: "American spelling: '%s', not '%s'."
+level: error
+ignorecase: true
+swap:
+  modelled: modeled
+  modelling: modeling
+  labelled: labeled
+  labelling: labeling
+  cancelled: canceled
+  cancelling: canceling
+  travelled: traveled
+  travelling: traveling
+  signalled: signaled
+  totalled: totaled
+  behaviour: behavior
+  behaviours: behaviors
+  colour: color
+  colours: colors
+  coloured: colored
+  favour: favor
+  favourite: favorite
+  honour: honor
+  centre: center
+  centres: centers
+  centred: centered
+  metre: meter
+  metres: meters
+  kilometre: kilometer
+  kilometres: kilometers
+  litre: liter
+  catalogue: catalog
+  programme: program
+  programmes: programs
+  judgement: judgment
+  licence: license
+  defence: defense
+  offence: offense
+  grey: gray
+  organise: organize
+  organised: organized
+  organising: organizing
+  organisation: organization
+  organisations: organizations
+  recognise: recognize
+  recognised: recognized
+  prioritise: prioritize
+  prioritised: prioritized
+  summarise: summarize
+  summarised: summarized
+  optimise: optimize
+  optimised: optimized
+  optimisation: optimization
+  minimise: minimize
+  maximise: maximize
+  standardise: standardize
+  normalise: normalize
+  normalised: normalized
+  analyse: analyze
+  analysed: analyzed
+  analysing: analyzing
+  fulfil: fulfill
+  enrol: enroll
+  practise: practice
+  artefact: artifact
+  artefacts: artifacts
