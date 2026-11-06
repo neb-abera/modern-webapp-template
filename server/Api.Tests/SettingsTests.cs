@@ -11,7 +11,7 @@ using Xunit;
 
 namespace Api.Tests;
 
-// server/Api/appsettings.json, as behaviour. Without that file the framework's
+// server/Api/appsettings.json, as behavior. Without that file the framework's
 // defaults apply silently: a request body may be 28.6 MB on every endpoint,
 // and the log level hides authorization failures. (Which Host headers are
 // answered is HostAllowlistTests.)
