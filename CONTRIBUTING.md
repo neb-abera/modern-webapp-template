@@ -36,7 +36,10 @@ project can consume. Dependabot only offers a bump the project can take, so
 without this check such a pin ages with nothing red. The fix is a manifest of
 its own for an npm package (see `tools/api-types/`) or a target framework move
 for a NuGet one. A case you accept goes in `.held-majors` with its reason, and
-the check tells you when that entry can be dropped.
+the check tells you when that entry can be dropped. The same check fails on a
+NuGet pin 21 days behind a release on its own major. Dependabot offers those,
+so a pin that old means Dependabot is not seeing the projects. Read its NuGet
+job log for the error.
 
 ## Making a change
 

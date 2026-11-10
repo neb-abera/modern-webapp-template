@@ -6,8 +6,9 @@
 # framework; scripts/check-dotnet-major.sh makes that cross-major jump with
 # all the lockstep sites in one commit.
 #
-# Runs weekly, on Mondays, so a GA major is picked up within 7 days. Does
-# nothing when already current, and nothing while the repository is on a
+# Runs daily, so a GA release is picked up the day after it ships. .NET
+# 11.0.0 shipped on Tuesday 2026-11-10, a day after the weekly Monday run,
+# and would have waited six days. Does nothing when already current, and nothing while the repository is on a
 # prerelease ahead of GA. PRs opened with the default workflow token do not
 # trigger CI. Close and reopen the PR (or push an empty commit) to run the
 # checks.
@@ -15,7 +16,7 @@ name: dotnet-major-upgrade
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 # Nothing at the workflow level: the write grants live on the one job that
