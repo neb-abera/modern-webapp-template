@@ -191,6 +191,32 @@ async Task<Dictionary<string, string>> ExactlyPinned(Dictionary<string, string> 
     return result;
 }
 
+// The dependencies of one package version, id -> version range.
+async Task<List<(string id, string range)>> Dependencies(string id, string version)
+{
+    var lower = id.ToLowerInvariant();
+    var nuspec = XDocument.Parse(await Registry(() => http.GetStringAsync($"https://api.nuget.org/v3-flatcontainer/{lower}/{version.ToLowerInvariant()}/{lower}.nuspec")));
+    return nuspec.Descendants().Where(e => e.Name.LocalName == "dependency")
+        .Select(e => ((string?)e.Attribute("id") ?? "", (string?)e.Attribute("version") ?? "")).Where(d => d.Item1.Length > 0).Distinct().ToList();
+}
+
+// The held package a version needs, directly or through packages on the
+// same major that are not pinned here (EF Core Sqlite reaches Relational
+// through Sqlite.Core), or null.
+async Task<string?> Reaches(string id, string version, int major, Dictionary<string, string> held, Dictionary<string, string> pinned, HashSet<string> seen)
+{
+    if (!seen.Add($"{id}@{version}")) return null;
+    foreach (var (dep, range) in await Dependencies(id, version))
+    {
+        if (held.ContainsKey(dep)) return dep;
+        var low = range.TrimStart('[', '(').Split(',', ']', ')')[0].Trim();
+        if (low.Length == 0 || pinned.ContainsKey(dep) || !low.StartsWith($"{major}.")) continue;
+        var found = await Reaches(dep, low, major, held, pinned, seen);
+        if (found is not null) return found;
+    }
+    return null;
+}
+
 // The pins behind a stable release on their own major that has been out
 // `days` or longer, as error lines. Printed notes say what was let through.
 async Task<List<string>> StalePins(string dir, Dictionary<string, string> pinned, int days)
@@ -204,13 +230,19 @@ async Task<List<string>> StalePins(string dir, Dictionary<string, string> pinned
     }
     var judged = behind.Where(b => b.ageDays >= days).ToList();
     var exact = judged.Count > 0 ? await ExactlyPinned(pinned) : [];
+    // A pin whose newer release needs a held one at GA is held too.
+    foreach (var b in judged.Where(b => !exact.ContainsKey(b.name)))
+    {
+        var via = await Reaches(b.name, b.latest, Major(b.latest), exact, pinned, []);
+        if (via is not null) exact[b.name] = $"its {b.latest} needs {via}, which";
+    }
     var findings = new List<string>();
     foreach (var b in behind)
     {
         if (b.ageDays < days)
             Console.WriteLine($"{dir} (nuget): {b.name} {b.current} -> {b.latest} (out {b.ageDays}d, judged after {days}d)");
         else if (exact.TryGetValue(b.name, out var pinner))
-            Console.WriteLine($"{dir} (nuget): {b.name} {b.current} -> {b.latest} (held: {pinner} pins it exactly)");
+            Console.WriteLine($"{dir} (nuget): {b.name} {b.current} -> {b.latest} (held: {pinner}{(pinner.EndsWith(" which") ? " is held" : " pins it exactly")})");
         else
             findings.Add($"{b.name} {b.current} is behind {b.latest}, out {b.ageDays} days");
     }
@@ -415,11 +447,15 @@ async Task<int> SelfTest()
     // Stale pins, from published versions. Newtonsoft.Json 13.0.1 is behind
     // a later 13.x (13.0.3 shipped in 2023) and must be found. 12.0.3 is the last 12.x and must not.
     // EF Core 11.0.0-rc.1 is behind 11.0.0, but the Npgsql provider
-    // 11.0.0-rc.1.1 pins it to [11.0.0-rc.1.26425.128], so it is held.
+    // 11.0.0-rc.1.1 pins it to [11.0.0-rc.1.26425.128], so it is held. EF
+    // Core Sqlite 11.0.0 needs Relational at GA through Sqlite.Core, which
+    // is not pinned, so it is held too.
     var stale = await StalePins("fixture", new(StringComparer.OrdinalIgnoreCase)
     {
         ["Newtonsoft.Json"] = "13.0.1",
         ["Microsoft.EntityFrameworkCore"] = "11.0.0-rc.1.26425.128",
+        ["Microsoft.EntityFrameworkCore.Relational"] = "11.0.0-rc.1.26425.128",
+        ["Microsoft.EntityFrameworkCore.Sqlite"] = "11.0.0-rc.1.26425.128",
         ["Npgsql.EntityFrameworkCore.PostgreSQL"] = "11.0.0-rc.1.1",
     }, 0);
     var current = await StalePins("fixture", new(StringComparer.OrdinalIgnoreCase) { ["Newtonsoft.Json"] = "12.0.3" }, 0);
@@ -433,6 +469,6 @@ async Task<int> SelfTest()
         Console.Error.WriteLine($"self-test: the last release of its major was called stale: {current[0]}");
         return 1;
     }
-    Console.WriteLine($"self-test (nuget): found the stale pin ({stale[0]}), held the exactly pinned prerelease, passed the last 12.x");
+    Console.WriteLine($"self-test (nuget): found the stale pin ({stale[0]}), held the exactly pinned prerelease and the one that reaches it, passed the last 12.x");
     return 0;
 }
