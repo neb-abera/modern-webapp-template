@@ -92,7 +92,7 @@ every change, and CI runs the same script.
   prerendered HTML the image ships, as a reader is given it. Check 3 of the
   suite.
 
-* **Toolchain.** .NET 11 (release candidate 1), React 19, Vite 8, Vitest 5,
+* **Toolchain.** .NET 11, React 19, Vite 8, Vitest 5,
   TypeScript 7, Biome 2, Playwright, Node 26.
 
 * **Kept current by Dependabot** on every ecosystem (both npm manifests,

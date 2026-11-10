@@ -26,7 +26,7 @@ RUN npm run build
 # tags but never the TargetFramework — the dotnet-major-upgrade workflow
 # (scripts/check-dotnet-major.sh) makes the cross-major jump.
 #
-FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:3a9175b6c54b2f076817af1360f691c9994447b192faa48a1a1f112a516844c7 AS server-build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS server-build
 WORKDIR /build/server
 COPY server/ ./
 # ReadyToRun precompiles IL for faster cold starts (Container Apps scale
@@ -39,7 +39,7 @@ RUN dotnet publish Api/Api.csproj -c Release -o /out -p:PublishReadyToRun=true -
 # node-base above rather than a package repository, so the dev toolchain can
 # never drift from the version the client is built with.
 #
-FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:3a9175b6c54b2f076817af1360f691c9994447b192faa48a1a1f112a516844c7 AS dev
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS dev
 COPY --from=node-base /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
@@ -106,7 +106,7 @@ RUN ! vale --config=/prose/.vale.ini --output=line /prose/.vale/fixtures/fails.m
 # Production runtime: distroless-style chiseled image, non-root by default,
 # serving the API and the built client from one container.
 #
-FROM mcr.microsoft.com/dotnet/aspnet:11.0-resolute-chiseled@sha256:1431d55bf5bd5708450c10664f3d4c4603d7e60cc059e64397787de3978f3e8c AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-resolute-chiseled@sha256:fc0ee12f9ea79bde6cda88c7a34e5467fe383dbb62276be0ec13e5e9cc1654ac AS runtime
 WORKDIR /app
 # Owned by the user the app runs as. Without the --chown the mode travels
 # from the build context: a developer whose umask is 007 checks
