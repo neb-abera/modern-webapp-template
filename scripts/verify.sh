@@ -539,7 +539,7 @@ else
 fi
 rm -rf "$CONTRACT_OUT" 2>/dev/null || true
 
-banner "Held majors: every newer npm and NuGet major can be taken, so Dependabot can offer it"
+banner "Held majors: every newer npm and NuGet major can be taken, and no NuGet pin sits behind its own major"
 # The self-tests run first, every time: they replay the failure this check
 # exists for from published versions (an npm peer conflict, a NuGet package
 # shipping only a newer framework), so a check that has lost the ability to
@@ -547,10 +547,10 @@ banner "Held majors: every newer npm and NuGet major can be taken, so Dependabot
 if ./scripts/check-held-majors.sh --self-test > "$LOG" 2>&1 \
    && ./scripts/check-held-majors.sh >> "$LOG" 2>&1; then
   grep -E ' -> |^self-test' "$LOG" || true
-  pass "No npm or NuGet dependency is held behind a major it cannot take"
+  pass "No npm or NuGet dependency is held behind a major it cannot take, and Dependabot is keeping NuGet current"
 else
   tail -40 "$LOG"
-  fail "Held majors (an uninstallable major, a stale .held-majors entry, or a broken self-test)"
+  fail "Held majors (an uninstallable major, a NuGet pin Dependabot is not moving, a stale .held-majors entry, or a broken self-test)"
 fi
 
 banner "Response DTOs: no personal or secret fields leave the API unlisted"

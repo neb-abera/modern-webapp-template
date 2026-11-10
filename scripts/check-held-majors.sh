@@ -22,7 +22,10 @@
 # `dotnet run` in the SDK image the server builds with): a major that ships
 # no framework a referencing project can consume is never offered either.
 # Skipped when dependabot.yml has no nuget entry, so one script serves every
-# repository.
+# repository. The NuGet half also fails on a pin 21 days behind a release on
+# its own major (STALE_PINS_GRACE_DAYS): Dependabot offers those, so a pin
+# that old means its NuGet job is not seeing the projects. That ran six weeks
+# unnoticed from 2026-09-27, when the updater could not target net11.0.
 #
 # Accepted cases live in .held-majors with their reasoning, like
 # .trivyignore. An entry that is no longer needed fails the check too.
@@ -105,7 +108,7 @@ if [ -n "$nuget_dirs" ]; then
   # The tree is mounted read-only, so the file-based app is copied out and
   # compiles into a scratch directory of its own.
   docker run --rm -v "$PWD":/src:ro -w /src \
-    -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 -e HELD_MAJORS_GRACE_DAYS \
+    -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 -e HELD_MAJORS_GRACE_DAYS -e STALE_PINS_GRACE_DAYS \
     "$SDK_IMAGE" sh -c 'cp scripts/held-nuget-majors.cs /tmp/ && cd /src && dotnet run /tmp/held-nuget-majors.cs -- "$@"' sh "${args[@]}" 2>&1 | tee "$nuget_log" || rc=$?
   # dotnet run restores the file-based app before any line of it runs, and
   # that restore reads nuget.org's service index: with the registry down it

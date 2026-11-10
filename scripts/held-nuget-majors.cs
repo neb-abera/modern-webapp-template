@@ -28,6 +28,12 @@ using System.Xml.Linq;
 // A new major often lands before the packages around it move to the same
 // framework; that lag is not a silent pin. Judged only after this long.
 int graceDays = int.TryParse(Environment.GetEnvironmentVariable("HELD_MAJORS_GRACE_DAYS"), out var g) ? g : 30;
+// Dependabot offers a release within its own major a week after the
+// cooldown at most. A pin this far behind one means Dependabot is not
+// seeing the project: on 2026-09-27 the server moved to net11.0, the
+// updater's newest SDK was 10.0.400, and every NuGet job found no project
+// (NETSDK1045) and reported success for six weeks.
+int staleDays = int.TryParse(Environment.GetEnvironmentVariable("STALE_PINS_GRACE_DAYS"), out var sd) ? sd : 21;
 const string ExceptionsFile = ".held-majors";
 var http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(60) };
 http.DefaultRequestHeaders.UserAgent.ParseAdd("held-majors-check");
@@ -131,6 +137,116 @@ async Task<(string version, DateTimeOffset published)?> Latest(string id)
         }
     }
     return best;
+}
+
+// The newest listed stable version on one major and its publish date.
+async Task<(string version, DateTimeOffset published)?> LatestOn(string id, int major)
+{
+    var index = JsonDocument.Parse(await Registry(() => http.GetStringAsync($"https://api.nuget.org/v3/registration5-gz-semver2/{id.ToLowerInvariant()}/index.json"))).RootElement;
+    (string, DateTimeOffset)? best = null;
+    foreach (var page in index.GetProperty("items").EnumerateArray())
+    {
+        var items = page.TryGetProperty("items", out var inline)
+            ? inline
+            : JsonDocument.Parse(await Registry(() => http.GetStringAsync(page.GetProperty("@id").GetString()!))).RootElement.GetProperty("items");
+        foreach (var item in items.EnumerateArray())
+        {
+            var entry = item.GetProperty("catalogEntry");
+            var version = entry.GetProperty("version").GetString()!;
+            if (version.Contains('-') || version.Contains('+') || Major(version) != major) continue;
+            if (entry.TryGetProperty("listed", out var listed) && !listed.GetBoolean()) continue;
+            if (best is null || CompareVersions(version, best.Value.Item1) > 0)
+                best = (version, entry.GetProperty("published").GetDateTimeOffset());
+        }
+    }
+    return best;
+}
+
+// Is the stable version `newer` past the pin? A prerelease pin is behind
+// any stable release of its own version or later (11.0.0 > 11.0.0-rc.3).
+static bool Past(string newer, string pin)
+{
+    var core = pin.Split('-', '+')[0];
+    return pin.Contains('-') ? CompareVersions(newer, core) >= 0 : CompareVersions(newer, core) > 0;
+}
+
+// Packages another pin requires at one exact version (`[11.0.0-rc.3.x]`),
+// name -> the pin that requires it. Such a package cannot move until its
+// pinner does, as EF Core waited on the Npgsql provider in November 2026.
+async Task<Dictionary<string, string>> ExactlyPinned(Dictionary<string, string> pinned)
+{
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var (name, version) in pinned)
+    {
+        var lower = name.ToLowerInvariant();
+        var nuspec = XDocument.Parse(await Registry(() => http.GetStringAsync($"https://api.nuget.org/v3-flatcontainer/{lower}/{version.ToLowerInvariant()}/{lower}.nuspec")));
+        foreach (var dep in nuspec.Descendants().Where(e => e.Name.LocalName == "dependency"))
+        {
+            var id = (string?)dep.Attribute("id");
+            var range = (string?)dep.Attribute("version") ?? "";
+            if (id is not null && pinned.ContainsKey(id) && range.StartsWith('[') && range.EndsWith(']') && !range.Contains(','))
+                result[id] = $"{name} {version}";
+        }
+    }
+    return result;
+}
+
+// The dependencies of one package version, id -> version range.
+async Task<List<(string id, string range)>> Dependencies(string id, string version)
+{
+    var lower = id.ToLowerInvariant();
+    var nuspec = XDocument.Parse(await Registry(() => http.GetStringAsync($"https://api.nuget.org/v3-flatcontainer/{lower}/{version.ToLowerInvariant()}/{lower}.nuspec")));
+    return nuspec.Descendants().Where(e => e.Name.LocalName == "dependency")
+        .Select(e => ((string?)e.Attribute("id") ?? "", (string?)e.Attribute("version") ?? "")).Where(d => d.Item1.Length > 0).Distinct().ToList();
+}
+
+// The held package a version needs, directly or through packages on the
+// same major that are not pinned here (EF Core Sqlite reaches Relational
+// through Sqlite.Core), or null.
+async Task<string?> Reaches(string id, string version, int major, Dictionary<string, string> held, Dictionary<string, string> pinned, HashSet<string> seen)
+{
+    if (!seen.Add($"{id}@{version}")) return null;
+    foreach (var (dep, range) in await Dependencies(id, version))
+    {
+        if (held.ContainsKey(dep)) return dep;
+        var low = range.TrimStart('[', '(').Split(',', ']', ')')[0].Trim();
+        if (low.Length == 0 || pinned.ContainsKey(dep) || !low.StartsWith($"{major}.")) continue;
+        var found = await Reaches(dep, low, major, held, pinned, seen);
+        if (found is not null) return found;
+    }
+    return null;
+}
+
+// The pins behind a stable release on their own major that has been out
+// `days` or longer, as error lines. Printed notes say what was let through.
+async Task<List<string>> StalePins(string dir, Dictionary<string, string> pinned, int days)
+{
+    var behind = new List<(string name, string current, string latest, int ageDays)>();
+    foreach (var (name, current) in pinned)
+    {
+        var latest = await LatestOn(name, Major(current.Split('-')[0]));
+        if (latest is null || !Past(latest.Value.version, current)) continue;
+        behind.Add((name, current, latest.Value.version, (int)(DateTimeOffset.UtcNow - latest.Value.published).TotalDays));
+    }
+    var judged = behind.Where(b => b.ageDays >= days).ToList();
+    var exact = judged.Count > 0 ? await ExactlyPinned(pinned) : [];
+    // A pin whose newer release needs a held one at GA is held too.
+    foreach (var b in judged.Where(b => !exact.ContainsKey(b.name)))
+    {
+        var via = await Reaches(b.name, b.latest, Major(b.latest), exact, pinned, []);
+        if (via is not null) exact[b.name] = $"its {b.latest} needs {via}, which";
+    }
+    var findings = new List<string>();
+    foreach (var b in behind)
+    {
+        if (b.ageDays < days)
+            Console.WriteLine($"{dir} (nuget): {b.name} {b.current} -> {b.latest} (out {b.ageDays}d, judged after {days}d)");
+        else if (exact.TryGetValue(b.name, out var pinner))
+            Console.WriteLine($"{dir} (nuget): {b.name} {b.current} -> {b.latest} (held: {pinner}{(pinner.EndsWith(" which") ? " is held" : " pins it exactly")})");
+        else
+            findings.Add($"{b.name} {b.current} is behind {b.latest}, out {b.ageDays} days");
+    }
+    return findings;
 }
 
 // The frameworks a package version ships assets for: lib/ and ref/ folders
@@ -287,6 +403,15 @@ async Task<int> Check(string[] dirs)
                 Console.Error.WriteLine($"error: {ExceptionsFile}: {dir} {name} {c.latest} can be taken now; drop the entry and take the bump.");
             }
         }
+        var stale = await StalePins(dir, pinned, staleDays);
+        if (stale.Count > 0)
+        {
+            dirFailed = true;
+            Console.Error.WriteLine($"\nerror: {dir} (nuget): {stale.Count} pin(s) behind a release on their own major for {staleDays} days or more.");
+            Console.Error.WriteLine("Dependabot keeps a major current, so it is not seeing these projects. Read its NuGet job log");
+            Console.Error.WriteLine("(Insights, Dependency graph, Dependabot) for an error such as NETSDK1045, then take the bumps.");
+            foreach (var f in stale) Console.Error.WriteLine($"  {f}");
+        }
         if (!dirFailed) Console.WriteLine($"{dir} (nuget): ok");
         failed |= dirFailed;
     }
@@ -318,5 +443,32 @@ async Task<int> SelfTest()
         return 1;
     }
     Console.WriteLine($"self-test (nuget): refused the net10.0-only bump for a net8.0 project ({refused[0]}), accepted the netstandard2.0 one");
+
+    // Stale pins, from published versions. Newtonsoft.Json 13.0.1 is behind
+    // a later 13.x (13.0.3 shipped in 2023) and must be found. 12.0.3 is the last 12.x and must not.
+    // EF Core 11.0.0-rc.1 is behind 11.0.0, but the Npgsql provider
+    // 11.0.0-rc.1.1 pins it to [11.0.0-rc.1.26425.128], so it is held. EF
+    // Core Sqlite 11.0.0 needs Relational at GA through Sqlite.Core, which
+    // is not pinned, so it is held too.
+    var stale = await StalePins("fixture", new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Newtonsoft.Json"] = "13.0.1",
+        ["Microsoft.EntityFrameworkCore"] = "11.0.0-rc.1.26425.128",
+        ["Microsoft.EntityFrameworkCore.Relational"] = "11.0.0-rc.1.26425.128",
+        ["Microsoft.EntityFrameworkCore.Sqlite"] = "11.0.0-rc.1.26425.128",
+        ["Npgsql.EntityFrameworkCore.PostgreSQL"] = "11.0.0-rc.1.1",
+    }, 0);
+    var current = await StalePins("fixture", new(StringComparer.OrdinalIgnoreCase) { ["Newtonsoft.Json"] = "12.0.3" }, 0);
+    if (stale.Count != 1 || !stale[0].StartsWith("Newtonsoft.Json 13.0.1 is behind 13.0."))
+    {
+        Console.Error.WriteLine($"self-test: expected Newtonsoft.Json 13.0.1 alone to be stale, found: {string.Join("; ", stale)}");
+        return 1;
+    }
+    if (current.Count > 0)
+    {
+        Console.Error.WriteLine($"self-test: the last release of its major was called stale: {current[0]}");
+        return 1;
+    }
+    Console.WriteLine($"self-test (nuget): found the stale pin ({stale[0]}), held the exactly pinned prerelease and the one that reaches it, passed the last 12.x");
     return 0;
 }
