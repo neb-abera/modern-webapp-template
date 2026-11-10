@@ -66,7 +66,11 @@
 # prerelease pins move to GA and nothing else does, and a second run on that
 # result changes nothing. With a registry that lacks the GA tag it fails before
 # editing a file. Last, a copy of this script with the package promotion cut
-# out is run on the same tree, and the check must catch it. Runs unattended,
+# out is run on the same tree, and the check must catch it. Then a package
+# with no stable release that pins another prerelease exactly is planted,
+# with a third that reaches the pinned one through an unlisted package: both
+# must stay, and a copy of the script without the hold must be caught. Runs
+# unattended,
 # so this is the only time anyone watches it work: CI runs it on every pull
 # request.
 
@@ -171,13 +175,22 @@ self_test() {
   done
   cp "$SELF" "$dir/planted/scripts/check-dotnet-major.sh"
   local tree
-  for tree in upgrade resuffixed ahead promote nogatag mutant unreadable; do cp -R "$dir/planted" "$dir/$tree"; done
+  for tree in upgrade resuffixed ahead promote nogatag mutant unreadable pinned unheld; do cp -R "$dir/planted" "$dir/$tree"; done
   # The prerelease trees also carry a preview sdk tag on the current channel.
   for tree in ahead promote nogatag mutant; do
     for f in $(cd "$dir/planted" && image_files); do
       perl -pi -e "s|dotnet/sdk:\\Q$current\\E(-[a-z-]+)?\\@|dotnet/sdk:$current-preview\\1\\@|" "$dir/$tree/$f"
     done
   done
+  # The pinned trees add a package with no stable release that pins another
+  # prerelease exactly, and one whose stable release reaches the pinned one
+  # through a package not listed here.
+  for tree in pinned unheld; do
+    for f in $(package_files); do
+      perl -0pi -e "s|(\\n\\s*</ItemGroup>)|\\n    <PackageVersion Include=\"Planted.Pending\" Version=\"$major.0.0-rc.2\" />\\n    <PackageVersion Include=\"Planted.Pinned\" Version=\"$major.0.0-rc.2.5\" />\\n    <PackageVersion Include=\"Planted.Via\" Version=\"$major.0.0-rc.2.5\" />\$1|" "$dir/$tree/$f"
+    done
+  done
+  perl -ni -e 'print unless /# self-test: the unheld mutant drops this line$/' "$dir/unheld/scripts/check-dotnet-major.sh"
   # The mutant runs a copy of this script with the package promotion cut
   # out. The check below must catch it, or it proves nothing.
   perl -ni -e 'print unless /# self-test: the mutant drops this line$/' "$dir/mutant/scripts/check-dotnet-major.sh"
@@ -213,7 +226,12 @@ self_test() {
 for a; do url="\$a"; done
 case "\$url" in
   *releases-index.json) cat "\$STUB_RELEASES_INDEX" ;;
+  *api.nuget.org/v3-flatcontainer/planted.pending/index.json) printf '{"versions":["%s.0.0-rc.1","%s.0.0-rc.2"]}\n' "$major" "$major" ;;
   *api.nuget.org/v3-flatcontainer/*/index.json) cat "$dir/fixture/nuget.json" ;;
+  */planted.pending/*.nuspec) echo '<dependency id="Planted.Pinned" version="[$major.0.0-rc.2.5]" />' ;;
+  */planted.via/*.nuspec) echo '<dependency id="Planted.Unlisted" version="$major.0.2" />' ;;
+  */planted.unlisted/*.nuspec) echo '<dependency id="Planted.Pinned" version="$major.0.2" />' ;;
+  *api.nuget.org/v3-flatcontainer/*.nuspec) echo '<package />' ;;
   *mcr.microsoft.com/v2/dotnet/aspnet/tags/list) printf '{"tags":["%s-noble","%s"]}\n' "$next" "\$STUB_ASPNET_TAG" ;;
   *) echo "stub curl: unexpected URL \$url" >&2; exit 1 ;;
 esac
@@ -290,6 +308,18 @@ STUB
     grep -q "net$current\*\* from its prerelease pins to GA" "$tree.summary.md"
   }
   # shellcheck disable=SC2329  # invoked through check()
+  held_back() { # held_back <tree>: the pinned prerelease and what reaches it stay; the rest is promoted
+    local tree="$dir/$1" f
+    for f in $(cd "$dir/planted" && package_files); do
+      grep -q "Include=\"Planted.Pending\" Version=\"$major.0.0-rc.2\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Pinned\" Version=\"$major.0.0-rc.2.5\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Via\" Version=\"$major.0.0-rc.2.5\"" "$tree/$f" || return 1
+      grep -q "Include=\"Planted.Prerelease\" Version=\"$major.0.2\"" "$tree/$f" || return 1
+    done
+    grep -q "\`Planted.Pinned\` stays on $major.0.0-rc.2.5: \`Planted.Pending\` $major.0.0-rc.2 pins it exactly" "$tree.summary.md" || return 1
+    grep -q "\`Planted.Via\` stays on $major.0.0-rc.2.5: its $major.0.2 needs \`Planted.Pinned\` at GA" "$tree.summary.md"
+  }
+  # shellcheck disable=SC2329  # invoked through check()
   unchanged() { # unchanged <tree> [<before>]: every site is byte-identical to the planted tree, or to <before>
     diff -r "${2:-$dir/planted}" "$dir/$1" > /dev/null
   }
@@ -331,13 +361,22 @@ STUB
   check "and the promotion check catches it: a planted failure, so the check above is proven to fail" \
     eval '! promoted mutant'
 
+  run pinned index-current.json "$next-$suffix"
+  check "a prerelease pinned exactly by a package with no stable release is held (exit $code)" [ "$code" -eq 0 ]
+  check "it stays, so does a package that reaches it through an unlisted one, the rest is promoted, and the summary says why" \
+    held_back pinned
+  run unheld index-current.json "$next-$suffix"
+  check "a copy of the script that does not hold the exact pin still exits 0 (exit $code)" [ "$code" -eq 0 ]
+  check "and the hold check catches it: a planted failure, so the check above is proven to fail" \
+    eval '! held_back unheld'
+
   run unreadable index-empty.json "$next-$suffix"
   check "an index with no GA release fails rather than upgrading to nothing (exit $code)" [ "$code" -ne 0 ]
   check "it says why" grep -q "could not determine the latest GA .NET version" <<< "$out"
   check "and every site is untouched" unchanged unreadable
 
   if [ "$failed" -eq 0 ]; then
-    echo "self-test: a planted stale major was upgraded to the next GA major (an STS one) at every lockstep site, a changed image suffix was found, a release candidate ahead of GA was left alone and promoted once GA, a missing GA tag failed, a mutant was caught, an index with no GA release failed"
+    echo "self-test: a planted stale major was upgraded to the next GA major (an STS one) at every lockstep site, a changed image suffix was found, a release candidate ahead of GA was left alone and promoted once GA, a missing GA tag failed, an exact prerelease pin was held, two mutants were caught, an index with no GA release failed"
   fi
   return "$failed"
 }
@@ -376,6 +415,15 @@ packages="$(package_files)"
 
 digest_of() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}'; }
 bullets() { local f; for f in "$@"; do echo "- \`$f\`"; done; }
+# nuspec_deps <package> <version>: each dependency of that release as
+# "<id> <version range>", one per line.
+nuspec_deps() {
+  local lower xml
+  lower="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  xml="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/${lower}/${2,,}/${lower}.nuspec")" \
+    || { echo "error: could not read the nuspec of $1 $2; nothing was changed" >&2; return 1; }
+  perl -ne 'while (/<dependency\s+id="([^"]+)"\s+version="([^"]*)"/g) { print "$1 $2\n" }' <<< "$xml" | sort -u
+}
 
 # promote: the current major is GA. Move its prerelease pins to GA: each
 # package on the major with a prerelease label to the major's newest stable
@@ -394,19 +442,71 @@ promote() {
     moves="${moves}${ref} ${new_tag}@${digest}"$'\n'
   done
 
+  # Each prerelease pin on the major, with the newest stable release of the
+  # major or nothing.
+  local -A pinned=() stable=() held=()
+  local ver dep deps range changed
   # shellcheck disable=SC2086 # one path per word
-  while read -r pkg; do
+  while read -r pkg ver; do
     [ -n "$pkg" ] || continue
+    pinned[$pkg]="$ver"
     lower="$(echo "$pkg" | tr '[:upper:]' '[:lower:]')"
-    new_ver="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/${lower}/index.json" \
+    stable[$pkg]="$(curl -fsSL "https://api.nuget.org/v3-flatcontainer/${lower}/index.json" \
       | jq -r --arg m "${cur_major}." '.versions | map(select(startswith($m) and (contains("-") | not))) | last // empty')"
-    if [ -n "$new_ver" ]; then
+  done < <(sed -n "s/.*PackageVersion Include=\"\([^\"]*\)\" Version=\"\(${cur_major}\.[^\"]*-[^\"]*\)\".*/\1 \2/p" $packages | sort -u)
+
+  # A package with no stable release yet can pin a dependency to one exact
+  # prerelease ([11.0.0-rc.3.x]), as the Npgsql providers pin EF Core. Moving
+  # that dependency to GA fails restore (NU1608), so it stays, and so does any
+  # package whose stable release needs it at GA.
+  for pkg in "${!pinned[@]}"; do
+    [ -z "${stable[$pkg]}" ] || continue
+    deps="$(nuspec_deps "$pkg" "${pinned[$pkg]}")" || exit 1
+    while read -r dep range; do
+      [ -n "$dep" ] && [ -n "${pinned[$dep]+x}" ] && [[ "$range" =~ ^\[[^,]+\]$ ]] || continue
+      held[$dep]="\`${pkg}\` ${pinned[$pkg]} pins it exactly" # self-test: the unheld mutant drops this line
+    done <<< "$deps"
+  done
+  # reaches_held <package> <version>: the held package that release depends
+  # on, directly or through packages on the major that are not pinned here
+  # (EF Core Sqlite reaches Relational through Sqlite.Core), or nothing.
+  reaches_held() {
+    local deps dep range low found
+    deps="$(nuspec_deps "$1" "$2")" || return 1
+    while read -r dep range; do
+      [ -n "$dep" ] || continue
+      if [ -n "${held[$dep]+x}" ]; then echo "$dep"; return 0; fi
+      low="${range#[}"
+      low="${low%%[,\]]*}"
+      [[ "$low" == "${cur_major}."* ]] && [ -z "${pinned[$dep]+x}" ] || continue
+      found="$(reaches_held "$dep" "$low")" || return 1
+      if [ -n "$found" ]; then echo "$found"; return 0; fi
+    done <<< "$deps"
+  }
+  changed=1
+  while [ "$changed" -eq 1 ]; do
+    changed=0
+    for pkg in "${!pinned[@]}"; do
+      [ -n "${stable[$pkg]}" ] && [ -z "${held[$pkg]+x}" ] || continue
+      dep="$(reaches_held "$pkg" "${stable[$pkg]}")" || exit 1
+      if [ -n "$dep" ]; then
+        held[$pkg]="its ${stable[$pkg]} needs \`${dep}\` at GA"
+        changed=1
+      fi
+    done
+  done
+
+  for pkg in $(printf '%s\n' "${!pinned[@]}" | sort); do
+    new_ver="${stable[$pkg]}"
+    if [ -n "${held[$pkg]+x}" ]; then
+      pending="${pending}- \`${pkg}\` stays on ${pinned[$pkg]}: ${held[$pkg]}\n"
+    elif [ -n "$new_ver" ]; then
       for f in $packages; do replace "$f" "s|(Include=\"\Q${pkg}\E\" Version=\")\Q${cur_major}\E\.[^\"]*-[^\"]*|\${1}${new_ver}|"; done # self-test: the mutant drops this line
       bumped="${bumped}- \`${pkg}\` → ${new_ver}\n"
     else
       pending="${pending}- \`${pkg}\` has no stable ${cur_major}.x release yet\n"
     fi
-  done < <(sed -n "s/.*PackageVersion Include=\"\([^\"]*\)\" Version=\"${cur_major}\.[^\"]*-.*/\1/p" $packages | sort -u)
+  done
 
   while read -r old new; do
     [ -n "$old" ] || continue
