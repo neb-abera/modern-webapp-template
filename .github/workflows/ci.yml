@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           # Audit, not block: this job builds/runs containers, and container-side
           # DNS bypasses harden-runner's resolver, so blocked lookups surface as
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           # Only what this job actually dials: checkout (github.com) and the
@@ -148,7 +148,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -177,7 +177,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           # Audit, not block: this job runs containers. A pull under block
           # with the Docker Hub hosts listed still failed on 2026-09-26: the
@@ -218,7 +218,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           # Audit, not block: this job builds and runs containers, and
           # container-side DNS bypasses harden-runner's resolver.
