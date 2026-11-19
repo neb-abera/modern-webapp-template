@@ -53,6 +53,10 @@ jobs:
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             uploads.github.com:443
+            # C# buildless extraction restores packages. Blocked, the probe was
+            # sometimes dropped rather than refused, and dotnet restore hung
+            # until the 15 minute limit (aberaTech, 4 of 12 runs by 2026-11-19).
+            api.nuget.org:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
